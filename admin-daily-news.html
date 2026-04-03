@@ -23,55 +23,42 @@
   <button onclick="showPdaOnSolscan()">🔎 View PDA on Solscan</button>
   <button onclick="showCurrentNewsFromPda()" class="tealButton">🔍 Show Current On-Chain JSON</button>
   
-  <div id="status" class="status">READY — connect wallet → paste 5 links → Add Full Thread → UPDATE</div>
+  <div id="status" class="status">READY — paste 6 links (Main + 5 replies) → Add Full Thread → UPDATE</div>
 
-  <input id="urlInput" type="text" placeholder="Paste your 5 comma-separated X links here" />
+  <input id="urlInput" type="text" placeholder="Paste 6 comma-separated X links: Main post first, then 5 replies" />
 
-  <button onclick="addSingleThread()" class="tealButton">➕ Add Full Thread (5 posts)</button>
+  <button onclick="addSingleThread()" class="tealButton">➕ Add Full Thread (Main + 5 replies)</button>
   <button onclick="updateDailyNews()" class="tealButton">🚀 UPDATE DAILY NEWS ON-CHAIN (devnet)</button>
 
   <div id="postList"></div>
 
   <div class="note">
-    ✅ Seeker SolanaMobile Beta — Simplified & Fixed<br>
-    ✅ Connect first → paste 5 links → Add Full Thread → UPDATE<br>
-    ✅ You should see "Posts ready today (1)" after Add
+    ✅ New format: 6 links total (Main post first, then 5 sub/replies)<br>
+    ✅ The first link becomes the main post, the other 5 go into postIds<br>
+    ✅ This will look much better in the App.tsx news feed
   </div>
 
   <script>
     let provider = null;
     let connection;
     let PROGRAM_ID;
-    let posts = [];   // global
+    let posts = [];
 
     window.addEventListener('load', () => {
       connection = new solanaWeb3.Connection("https://api.devnet.solana.com", "confirmed");
       PROGRAM_ID = new solanaWeb3.PublicKey("8VX7TDKB4U1LR3RT8wYpF4kEUGuimgyJDnv6LwtFA1FB");
-      document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">READY — connect wallet first</strong>`;
+      document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">READY — paste 6 links (Main first) → Add Full Thread</strong>`;
       renderPostList();
     });
 
     async function connectWallet() {
       const statusEl = document.getElementById("status");
-      statusEl.innerHTML = `<strong style="color:#FFCC00">Connecting to Seed Vault...</strong>`;
-
-      if (!window.solana) {
-        statusEl.innerHTML = `<strong style="color:#FF3D00">No wallet detected</strong>`;
-        alert("❌ No wallet detected on Seeker.\n\nTry desktop Phantom for testing or make sure Seed Vault is open.");
-        return;
-      }
-
+      if (!window.solana) return alert("No wallet detected");
       provider = window.solana;
       try {
         await provider.connect();
-        const pubkey = provider.publicKey ? provider.publicKey.toString().slice(0,8) + "..." : "connected";
-        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ CONNECTED (${pubkey})</strong>`;
-        alert("✅ Wallet connected!\n\nNow paste 5 X links and click Add Full Thread");
-      } catch (e) {
-        console.error(e);
-        statusEl.innerHTML = `<strong style="color:#FF3D00">Connect failed</strong>`;
-        alert("❌ Connect failed. Make sure Seed Vault is unlocked and try again.");
-      }
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ CONNECTED</strong>`;
+      } catch (e) { statusEl.innerHTML = `<strong style="color:#FF3D00">Connect failed</strong>`; }
     }
 
     async function showPdaOnSolscan() {
@@ -91,31 +78,33 @@
       } catch(e){ alert("Debug error: " + e.message); }
     }
 
-    function addSingleThread() {
+  function addSingleThread() {
       const input = document.getElementById("urlInput").value.trim();
-      if (!input) return alert("Paste the 5 links separated by commas");
+      if (!input) return alert("Paste the 6 links separated by commas");
 
       const links = input.split(',').map(l => l.trim()).filter(l => l);
-      if (links.length !== 5) return alert("Please enter exactly 5 links");
+      if (links.length < 5 || links.length > 6) {
+        return alert("Please enter 5 or 6 full X links separated by commas");
+      }
 
       const today = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'});
-      const postIds = links.map(link => {
-        const match = link.match(/status\/(\d+)/);
-        return match ? match[1] : link;
-      });
 
       posts.push({
         id: `thread-${Date.now()}`,
         date: today,
         title: "Daily Longevity Thread",
-        content: "Full 5-post thread on X — tap any post to open",
-        postIds: postIds,
+        content: `Full ${links.length}-post thread from @optima_sanitas`,
+        postUrls: links,                    // ← NOW STORES FULL LINKS
+        postIds: links.map(link => {        // keep old field for safety during transition
+          const match = link.match(/status\/(\d+)/);
+          return match ? match[1] : link;
+        }),
         videoTag: "Video1",
         videoUrl: ""
       });
 
-      console.log("✅ Thread added. Total posts:", posts.length);
-      alert(`✅ Full 5-post thread added successfully!\nNow click UPDATE DAILY NEWS`);
+      console.log(`✅ Thread added with ${links.length} full URLs`);
+      alert(`✅ ${links.length}-post thread with FULL links added!\nNow click UPDATE DAILY NEWS`);
       renderPostList();
       document.getElementById("urlInput").value = "";
     }
@@ -124,14 +113,14 @@
       const container = document.getElementById("postList");
       container.innerHTML = `<h3 style="color:#00FF9D">Posts ready today (${posts.length})</h3>`;
       if (posts.length === 0) {
-        container.innerHTML += `<p style="color:#888">No threads added yet. Paste links and click Add.</p>`;
+        container.innerHTML += `<p style="color:#888">No threads added yet</p>`;
         return;
       }
       posts.forEach((post, i) => {
         const div = document.createElement("div");
         div.className = "post";
         div.innerHTML = `
-          <p><strong>Thread #${i+1}</strong> — 5 posts</p>
+          <p><strong>Thread #${i+1}</strong> — Main + 5 replies</p>
           <label>Title</label><input type="text" value="${post.title}" onchange="posts[${i}].title = this.value" />
           <label>Content Summary</label><textarea onchange="posts[${i}].content = this.value">${post.content}</textarea>
           <label>Video URL (optional)</label>
@@ -154,10 +143,8 @@
 
       try {
         const [dailyNewsPda] = await solanaWeb3.PublicKey.findProgramAddress([new TextEncoder().encode("daily-news-seeker-final")], PROGRAM_ID);
-        console.log("🧪 PDA:", dailyNewsPda.toString());
 
         const discriminator = new Uint8Array([34, 136, 110, 102, 49, 52, 170, 48]);
-        console.log("🧪 Discriminator:", Array.from(discriminator).join(" "));
 
         const jsonBytes = new TextEncoder().encode(newsJson);
         const lengthBuf = new Uint8Array(4);
