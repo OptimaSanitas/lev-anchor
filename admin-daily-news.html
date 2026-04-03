@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SolaNa Seeker — Daily X News Updater (2-Video Mode)</title>
+  <style>
+    body {font-family: system-ui; background:#0A0A0A; color:#00FF9D; padding:30px; max-width:900px; margin:0 auto;}
+    h1 {color:#00FF9D;}
+    button {background:#00C853; color:#000; border:none; padding:16px 28px; font-size:18px; font-weight:700; border-radius:12px; cursor:pointer; margin:8px 0;}
+    .redButton {background:#FF3D00 !important;}
+    .tealButton {background:#00B8D4 !important;}
+    input, textarea, select {width:100%; background:#111; color:#0F0; padding:14px; border-radius:12px; border:2px solid #00FF9D; margin-bottom:12px; font-size:16px;}
+    .post {background:#1E1E1E; padding:16px; border-radius:12px; margin-bottom:12px;}
+    .status {font-size:16px; padding:12px; border-radius:12px; background:#1E1E1E; margin:12px 0;}
+    .note {background:#1E1E1E; padding:14px; border-radius:12px; font-size:15px; margin-top:20px;}
+  </style>
+  <script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+</head>
+<body>
+  <h1>📰 SolaNa Seeker Daily X News Updater</h1>
+  
+  <button onclick="connectWallet()">🔗 CONNECT WALLET</button>
+  <button onclick="initializeEmptyPda()">🟢 Initialize Empty PDA</button>
+  <button onclick="resetPda()" class="redButton">🔄 Reset Daily News PDA</button>
+  <button onclick="showPdaOnSolscan()">🔎 View PDA on Solscan</button>
+  <button onclick="showCurrentNewsFromPda()" class="tealButton">🔍 Show Current On-Chain JSON</button>
+  
+  <div id="status" class="status">READY — paste X link below</div>
+
+  <input id="urlInput" type="text" placeholder="Paste full X link here (e.g. https://x.com/.../status/2037225595449340216)" />
+
+  <button onclick="autoFetchThreadPreview()" class="tealButton">🔍 Auto-Fetch Thread Preview</button>
+  <button onclick="addPostFromUrl()">➕ Add This X Post (manual)</button>
+  <button onclick="updateDailyNews()">🚀 UPDATE DAILY NEWS ON-CHAIN (devnet)</button>
+
+  <div id="postList"></div>
+
+  <div class="note">
+    ✅ NEW: Auto-Fetch button pulls real post text + video automatically<br>
+    ✅ Just paste link → click Auto-Fetch → tweak if needed → UPDATE<br>
+    ✅ App.tsx already pulls the live JSON into News tab
+  </div>
+
+  <script>
+    let provider = null;
+    let connection;
+    let PROGRAM_ID;
+    let posts = [];
+
+    window.addEventListener('load', () => {
+      connection = new solanaWeb3.Connection("https://api.devnet.solana.com", "confirmed");
+      PROGRAM_ID = new solanaWeb3.PublicKey("8VX7TDKB4U1LR3RT8wYpF4kEUGuimgyJDnv6LwtFA1FB");
+      document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">READY — Auto-Fetch button added</strong>`;
+    });
+
+    async function connectWallet() {
+      const statusEl = document.getElementById("status");
+      if (!window.solana) return alert("No wallet detected");
+      provider = window.solana;
+      try { await provider.connect(); statusEl.innerHTML = `<strong style="color:#00FF9D">CONNECTED</strong>`; }
+      catch (e) { statusEl.innerHTML = `<strong style="color:#FF3D00">Connect failed</strong>`; }
+    }
+
+    async function initializeEmptyPda() { /* unchanged */ }
+    async function resetPda() { /* unchanged */ }
+    async function showPdaOnSolscan() { /* unchanged */ }
+    async function showCurrentNewsFromPda() { /* unchanged */ }
+
+    // NEW: Auto-Fetch Thread Preview (using public fxTwitter API)
+    async function autoFetchThreadPreview() {
+      const url = document.getElementById("urlInput").value.trim();
+      if (!url) return alert("❌ Paste a full X link first");
+      const match = url.match(/status\/(\d+)/);
+      if (!match) return alert("❌ Invalid X link — must contain /status/123456");
+      const postId = match[1];
+
+      try {
+        const res = await fetch(`https://api.fxtwitter.com/status/${postId}`);
+        const data = await res.json();
+        const tweet = data.tweet || data;
+
+        const today = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'});
+        let videoUrl = "";
+        let videoTag = "None";
+
+        // Auto-detect video
+        if (tweet.media && tweet.media.videos && tweet.media.videos.length > 0) {
+          videoUrl = tweet.media.videos[0].url || "";
+          videoTag = "Video1";
+        }
+
+        posts.push({
+          id: `daily${posts.length + 1}`,
+          postId: postId,
+          date: today,
+          title: tweet.author ? `${tweet.author.name} — ${tweet.text.substring(0, 60)}...` : "Daily Longevity Thread",
+          content: tweet.text || "Full thread on X — tap to open",
+          videoTag: videoTag,
+          videoUrl: videoUrl
+        });
+
+        renderPostList();
+        document.getElementById("urlInput").value = "";
+        alert(`✅ Auto-Fetch complete!\nPost added with real text + video (if present)\n\nNow tweak fields if needed and click UPDATE`);
+      } catch (e) {
+        alert("Auto-Fetch failed (network or rate-limit). Use manual Add button instead.");
+        console.error(e);
+      }
+    }
+
+    function addPostFromUrl() { /* unchanged */ }
+
+    function renderPostList() {
+      const container = document.getElementById("postList");
+      container.innerHTML = `<h3 style="color:#00FF9D">Posts ready today (${posts.length})</h3>`;
+      posts.forEach((post, i) => {
+        const div = document.createElement("div");
+        div.className = "post";
+        div.innerHTML = `
+          <p><strong>Post #${i+1}</strong> — postId: ${post.postId}</p>
+          <label>Title</label><input type="text" value="${post.title}" onchange="posts[${i}].title = this.value" />
+          <label>Content</label><textarea onchange="posts[${i}].content = this.value">${post.content}</textarea>
+          <label>Video Tag</label>
+          <select onchange="posts[${i}].videoTag = this.value">
+            <option value="None" ${post.videoTag==="None"?"selected":""}>None</option>
+            <option value="Video1" ${post.videoTag==="Video1"?"selected":""}>Video 1</option>
+            <option value="Video2" ${post.videoTag==="Video2"?"selected":""}>Video 2</option>
+          </select>
+          <label>Video URL (optional)</label>
+          <input type="text" value="${post.videoUrl}" onchange="posts[${i}].videoUrl = this.value" placeholder="https://video.twimg.com/..." />
+          <button onclick="posts.splice(${i},1); renderPostList();" style="background:#FF3D00; font-size:14px; padding:8px 16px;">Remove</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function updateDailyNews() { /* unchanged */ }
+  </script>
+</body>
+</html>

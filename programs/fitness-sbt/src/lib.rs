@@ -1,7 +1,6 @@
-#![allow(unexpected_cfgs)]   // ← This clears all the cfg warnings
+#![allow(unexpected_cfgs)]
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token, TokenAccount, mint_to, MintTo};
 
 declare_id!("8VX7TDKB4U1LR3RT8wYpF4kEUGuimgyJDnv6LwtFA1FB");
 
@@ -38,7 +37,7 @@ pub mod fitness_sbt {
     }
 
     // ================================================================
-    // Claim Daily Reward (now gated)
+    // Claim Daily Reward (now with FIXED CPI seeds)
     // ================================================================
     pub fn claim_daily_reward(ctx: Context<ClaimDailyReward>, exercise_id: String) -> Result<()> {
         let config = &ctx.accounts.mint_config;
@@ -51,18 +50,18 @@ pub mod fitness_sbt {
             to: ctx.accounts.user.to_account_info(),
         };
 
-        let seeds = &[
+        // ✅ FIXED: proper binding so seeds live long enough for CPI
+        let seeds = [
             b"reward_vault".as_ref(),
             exercise_id.as_bytes(),
             &[ctx.bumps.reward_vault],
         ];
-        let signer_seeds = &[&seeds[..]];
+        let signer_seeds = [&seeds[..]];
 
-        // ✅ Anchor 1.0.0 CPI change: pass program ID directly (no more .to_account_info())
         let cpi_ctx = CpiContext::new_with_signer(
-            anchor_lang::system_program::ID,   // ← this is the only change
+            anchor_lang::system_program::ID,
             cpi_accounts,
-            signer_seeds,
+            &signer_seeds,
         );
 
         anchor_lang::system_program::transfer(cpi_ctx, transfer_amount)?;
@@ -81,11 +80,63 @@ pub mod fitness_sbt {
         Ok(())
     }
 
-    // (keep your other instructions like mint_sbt, start_phase1, etc. if you still need them)
+    // ================================================================
+    // DAILY NEWS (this is what fixes the revert on update/reset)
+    // ================================================================
+    pub fn update_daily_news(ctx: Context<UpdateDailyNews>, news_json: String) -> Result<()> {
+        let daily_news = &mut ctx.accounts.daily_news;
+        daily_news.posts_json = news_json;
+        daily_news.bump = ctx.bumps.daily_news;
+        msg!("✅ Daily news updated on-chain! JSON size: {} bytes", daily_news.posts_json.len());
+        Ok(())
+    }
+
+    pub fn reset_daily_news(_ctx: Context<ResetDailyNews>) -> Result<()> {
+        msg!("✅ Daily news PDA closed (ready for fresh init)");
+        Ok(())
+    }
 }
 
 // ================================================================
-// Accounts (unchanged — fully compatible with 1.0.0)
+// Account structs
+// ================================================================
+
+#[account]
+pub struct DailyNews {
+    pub posts_json: String,
+    pub bump: u8,
+}
+
+#[derive(Accounts)]
+pub struct UpdateDailyNews<'info> {
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + 4 + 2500 + 1,
+        seeds = [b"daily-news-seeker-final"],
+        bump
+    )]
+    pub daily_news: Account<'info, DailyNews>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ResetDailyNews<'info> {
+    #[account(
+        mut,
+        close = authority,
+        seeds = [b"daily-news-seeker-final"],
+        bump = daily_news.bump
+    )]
+    pub daily_news: Account<'info, DailyNews>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+// ================================================================
+// Existing accounts (unchanged)
 // ================================================================
 
 #[derive(Accounts)]
@@ -93,14 +144,12 @@ pub struct InitializeMintConfig<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 1 + 4 + 4 + 4 + 4 + 256 + 1 + 1, // +1 for rewards_enabled
+        space = 8 + 32 + 1 + 4 + 4 + 4 + 4 + 256 + 1 + 1,
         seeds = [b"mint-config"],
         bump
     )]
     pub mint_config: Account<'info, MintConfig>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
+    #[account(mut)] pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -121,34 +170,20 @@ pub struct LogWorkout<'info> {
         bump
     )]
     pub user_state: Account<'info, UserState>,
-
-    #[account(mut)]
-    pub user: Signer<'info>,
+    #[account(mut)] pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 #[instruction(exercise_id: String)]
 pub struct ClaimDailyReward<'info> {
-    #[account(
-        mut,
-        seeds = [b"reward_vault", exercise_id.as_bytes()],
-        bump
-    )]
+    #[account(mut, seeds = [b"reward_vault", exercise_id.as_bytes()], bump)]
     pub reward_vault: SystemAccount<'info>,
-
-    #[account(mut)]
-    pub user: Signer<'info>,
-
+    #[account(mut)] pub user: Signer<'info>,
     #[account(seeds = [b"mint-config"], bump = mint_config.bump)]
     pub mint_config: Account<'info, MintConfig>,
-
     pub system_program: Program<'info, System>,
 }
-
-// ================================================================
-// Data Structures (unchanged)
-// ================================================================
 
 #[account]
 pub struct MintConfig {
@@ -173,14 +208,8 @@ pub struct UserState {
     pub bump: u8,
 }
 
-// ================================================================
-// Errors (unchanged — only one block, perfect for 1.0.0)
-// ================================================================
-
 #[error_code]
 pub enum ErrorCode {
-    #[msg("Unauthorized")]
-    Unauthorized,
-    #[msg("Rewards are not enabled yet")]
-    RewardsNotEnabled,
+    #[msg("Unauthorized")] Unauthorized,
+    #[msg("Rewards are not enabled yet")] RewardsNotEnabled,
 }
