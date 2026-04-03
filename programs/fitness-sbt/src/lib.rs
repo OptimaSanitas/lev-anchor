@@ -8,9 +8,6 @@ declare_id!("8VX7TDKB4U1LR3RT8wYpF4kEUGuimgyJDnv6LwtFA1FB");
 pub mod fitness_sbt {
     use super::*;
 
-    // ================================================================
-    // Initialize Mint Config (rewards disabled by default)
-    // ================================================================
     pub fn initialize_mint_config(ctx: Context<InitializeMintConfig>) -> Result<()> {
         let config = &mut ctx.accounts.mint_config;
         config.authority = ctx.accounts.authority.key();
@@ -21,13 +18,10 @@ pub mod fitness_sbt {
         config.current_image_uri = String::new();
         config.rewards_enabled = false;
         config.bump = ctx.bumps.mint_config;
-        msg!("✅ Mint config initialized — rewards DISABLED by default");
+        msg!("✅ Mint config initialized");
         Ok(())
     }
 
-    // ================================================================
-    // Toggle rewards on/off (only us)
-    // ================================================================
     pub fn toggle_rewards(ctx: Context<ManageMintConfig>, enable: bool) -> Result<()> {
         let config = &mut ctx.accounts.mint_config;
         require_keys_eq!(config.authority, ctx.accounts.authority.key(), ErrorCode::Unauthorized);
@@ -36,70 +30,47 @@ pub mod fitness_sbt {
         Ok(())
     }
 
-    // ================================================================
-    // Claim Daily Reward (now with FIXED CPI seeds)
-    // ================================================================
     pub fn claim_daily_reward(ctx: Context<ClaimDailyReward>, exercise_id: String) -> Result<()> {
         let config = &ctx.accounts.mint_config;
         require!(config.rewards_enabled, ErrorCode::RewardsNotEnabled);
-
-        let transfer_amount: u64 = 10_000_000; // 0.01 SOL
-
+        let transfer_amount: u64 = 10_000_000;
         let cpi_accounts = anchor_lang::system_program::Transfer {
             from: ctx.accounts.reward_vault.to_account_info(),
             to: ctx.accounts.user.to_account_info(),
         };
-
-        // ✅ FIXED: proper binding so seeds live long enough for CPI
-        let seeds = [
-            b"reward_vault".as_ref(),
-            exercise_id.as_bytes(),
-            &[ctx.bumps.reward_vault],
-        ];
+        let seeds = [b"reward_vault".as_ref(), exercise_id.as_bytes(), &[ctx.bumps.reward_vault]];
         let signer_seeds = [&seeds[..]];
-
-        let cpi_ctx = CpiContext::new_with_signer(
-            anchor_lang::system_program::ID,
-            cpi_accounts,
-            &signer_seeds,
-        );
-
+        let cpi_ctx = CpiContext::new_with_signer(anchor_lang::system_program::ID, cpi_accounts, &signer_seeds);
         anchor_lang::system_program::transfer(cpi_ctx, transfer_amount)?;
-
-        msg!("✅ 0.01 SOL reward sent from vault for {}", exercise_id);
+        msg!("✅ 0.01 SOL reward sent");
         Ok(())
     }
 
-    // ================================================================
-    // Log Workout (always works)
-    // ================================================================
     pub fn log_workout(ctx: Context<LogWorkout>) -> Result<()> {
         let user_state = &mut ctx.accounts.user_state;
         user_state.workouts_logged = user_state.workouts_logged.saturating_add(1);
-        msg!("✅ Workout logged for user {}", ctx.accounts.user.key());
+        msg!("✅ Workout logged");
         Ok(())
     }
 
-    // ================================================================
-    // DAILY NEWS (this is what fixes the revert on update/reset)
-    // ================================================================
     pub fn update_daily_news(ctx: Context<UpdateDailyNews>, news_json: String) -> Result<()> {
+        // ← NEW: safety guard so we get a clear error instead of silent revert
+        require!(news_json.len() <= 12000, ErrorCode::NewsTooLarge);
+
         let daily_news = &mut ctx.accounts.daily_news;
         daily_news.posts_json = news_json;
         daily_news.bump = ctx.bumps.daily_news;
-        msg!("✅ Daily news updated on-chain! JSON size: {} bytes", daily_news.posts_json.len());
+
+        msg!("✅ Daily news updated! JSON size: {} bytes", daily_news.posts_json.len());
         Ok(())
     }
 
     pub fn reset_daily_news(_ctx: Context<ResetDailyNews>) -> Result<()> {
-        msg!("✅ Daily news PDA closed (ready for fresh init)");
+        msg!("✅ Daily news PDA closed (lamports returned to authority)");
         Ok(())
     }
-}
 
-// ================================================================
-// Account structs
-// ================================================================
+}
 
 #[account]
 pub struct DailyNews {
@@ -112,7 +83,7 @@ pub struct UpdateDailyNews<'info> {
     #[account(
         init_if_needed,
         payer = authority,
-        space = 8 + 4 + 2500 + 1,
+        space = 8 + 4 + 8192 + 1,   // ← CHANGED: safe under 10,240 limit (12k was too big)
         seeds = [b"daily-news-seeker-final"],
         bump
     )]
@@ -124,30 +95,15 @@ pub struct UpdateDailyNews<'info> {
 
 #[derive(Accounts)]
 pub struct ResetDailyNews<'info> {
-    #[account(
-        mut,
-        close = authority,
-        seeds = [b"daily-news-seeker-final"],
-        bump = daily_news.bump
-    )]
+    #[account(mut, close = authority, seeds = [b"daily-news-seeker-final"], bump = daily_news.bump)]
     pub daily_news: Account<'info, DailyNews>,
     #[account(mut)]
     pub authority: Signer<'info>,
 }
 
-// ================================================================
-// Existing accounts (unchanged)
-// ================================================================
-
 #[derive(Accounts)]
 pub struct InitializeMintConfig<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + 32 + 1 + 4 + 4 + 4 + 4 + 256 + 1 + 1,
-        seeds = [b"mint-config"],
-        bump
-    )]
+    #[account(init, payer = authority, space = 8 + 32 + 1 + 4 + 4 + 4 + 4 + 256 + 1 + 1, seeds = [b"mint-config"], bump)]
     pub mint_config: Account<'info, MintConfig>,
     #[account(mut)] pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -162,13 +118,7 @@ pub struct ManageMintConfig<'info> {
 
 #[derive(Accounts)]
 pub struct LogWorkout<'info> {
-    #[account(
-        init_if_needed,
-        payer = user,
-        space = 8 + 32 + 32 + 8 + 4 + 1 + 1 + 1 + 32 + 8 + 1,
-        seeds = [b"user-state", user.key().as_ref()],
-        bump
-    )]
+    #[account(init_if_needed, payer = user, space = 8 + 32 + 32 + 8 + 4 + 1 + 1 + 1 + 32 + 8 + 1, seeds = [b"user-state", user.key().as_ref()], bump)]
     pub user_state: Account<'info, UserState>,
     #[account(mut)] pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -212,4 +162,5 @@ pub struct UserState {
 pub enum ErrorCode {
     #[msg("Unauthorized")] Unauthorized,
     #[msg("Rewards are not enabled yet")] RewardsNotEnabled,
+    #[msg("News JSON too large for PDA (max 12k)")] NewsTooLarge,
 }
