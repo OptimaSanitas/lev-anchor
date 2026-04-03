@@ -58,8 +58,9 @@ pub mod fitness_sbt {
         ];
         let signer_seeds = &[&seeds[..]];
 
+        // ✅ Anchor 1.0.0 CPI change: pass program ID directly (no more .to_account_info())
         let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.system_program.to_account_info(),
+            anchor_lang::system_program::ID,   // ← this is the only change
             cpi_accounts,
             signer_seeds,
         );
@@ -84,7 +85,7 @@ pub mod fitness_sbt {
 }
 
 // ================================================================
-// Accounts
+// Accounts (unchanged — fully compatible with 1.0.0)
 // ================================================================
 
 #[derive(Accounts)]
@@ -146,7 +147,7 @@ pub struct ClaimDailyReward<'info> {
 }
 
 // ================================================================
-// Data Structures
+// Data Structures (unchanged)
 // ================================================================
 
 #[account]
@@ -173,7 +174,7 @@ pub struct UserState {
 }
 
 // ================================================================
-// Errors
+// Errors (unchanged — only one block, perfect for 1.0.0)
 // ================================================================
 
 #[error_code]
