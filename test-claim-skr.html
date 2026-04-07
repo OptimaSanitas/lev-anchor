@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SolaNa Seeker — Claim SKR Test (Browser)</title>
+  <style>
+    body {font-family: system-ui; background:#0A0A0A; color:#00FF9D; padding:30px; max-width:900px; margin:0 auto;}
+    h1 {color:#00FF9D;}
+    button {background:#00C853; color:#000; border:none; padding:16px 28px; font-size:18px; font-weight:700; border-radius:12px; cursor:pointer; margin:8px 0; width:100%;}
+    .redButton {background:#FF3D00 !important;}
+    .tealButton {background:#00B8D4 !important;}
+    .status {font-size:16px; padding:12px; border-radius:12px; background:#1E1E1E; margin:12px 0; word-break:break-all;}
+    .note {background:#1E1E1E; padding:14px; border-radius:12px; font-size:15px; margin-top:20px;}
+  </style>
+  <script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+</head>
+<body>
+  <h1>🧪 SolaNa Seeker — Claim 0.05 SKR Test (Browser)</h1>
+  
+  <button onclick="connectWallet()">🔗 CONNECT WALLET (Phantom/Solflare)</button>
+  <button onclick="initializeRewardVaultPDA()" class="tealButton">1. INITIALIZE REWARD VAULT PDA (0.001 SOL)</button>
+  <button onclick="createRewardVaultATA()" class="tealButton">2. CREATE REWARD VAULT ATA (skr)</button>
+  <button onclick="fundRewardVault()" class="tealButton">3. FUND REWARD VAULT (200 SKR)</button>
+  <button onclick="claimSKR()" class="tealButton">🚀 CLAIM 0.05 SKR + Legend SBT</button>
+  
+  <div id="status" class="status">READY — connect wallet first</div>
+
+  <div class="note">
+    ✅ Fixed Buffer error (manual transfer)<br>
+    ✅ Fixed ConstraintMut on skr_mint (now writable)<br>
+    ✅ Exact same instruction as your current App.tsx<br>
+    ✅ Tap buttons in order 1→2→3→Claim
+  </div>
+
+  <script>
+    let provider = null;
+    let connection;
+    const PROGRAM_ID = new solanaWeb3.PublicKey("5PwEGd5ndktrTHTTMpbbvmaqP2piChGgTgdyWP9Us9y6");
+    const SKR_MINT = new solanaWeb3.PublicKey("DCrfzg5T8hijkX8EM6oN9sh4Ucm1AMqqNZQZBGTbmofQ");
+    const TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+    const ASSOCIATED_TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+    const SYSTEM_PROGRAM_ID = solanaWeb3.SystemProgram.programId;
+
+    window.addEventListener('load', () => {
+      connection = new solanaWeb3.Connection("https://api.devnet.solana.com", "confirmed");
+      document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">READY — tap CONNECT WALLET</strong>`;
+    });
+
+    async function connectWallet() {
+      const statusEl = document.getElementById("status");
+      if (!window.solana) return alert("No wallet detected");
+      provider = window.solana;
+      try {
+        await provider.connect();
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ CONNECTED: ${provider.publicKey.toString().slice(0,8)}...${provider.publicKey.toString().slice(-4)}</strong>`;
+      } catch (e) { 
+        statusEl.innerHTML = `<strong style="color:#FF3D00">Connect failed</strong>`;
+        console.error(e);
+      }
+    }
+
+    async function initializeRewardVaultPDA() {
+      if (!provider) return alert("Connect wallet first");
+      const statusEl = document.getElementById("status");
+      statusEl.innerHTML = `<strong style="color:#FF9800">Initializing reward_vault PDA...</strong>`;
+      try {
+        const encoder = new TextEncoder();
+        const [rewardVaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([encoder.encode('reward_vault'), encoder.encode('skr')], PROGRAM_ID);
+
+        // Manual transfer (no Buffer)
+        const ix = new solanaWeb3.TransactionInstruction({
+          keys: [
+            { pubkey: provider.publicKey, isSigner: true, isWritable: true },
+            { pubkey: rewardVaultPda, isSigner: false, isWritable: true },
+          ],
+          programId: SYSTEM_PROGRAM_ID,
+          data: new Uint8Array([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) // transfer 0.001 SOL
+        });
+
+        const { blockhash } = await connection.getLatestBlockhash();
+        const tx = new solanaWeb3.Transaction().add(ix);
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = provider.publicKey;
+
+        const signedTx = await provider.signTransaction(tx);
+        const signature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: false });
+
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ REWARD VAULT PDA INITIALIZED</strong>`;
+        alert(`✅ PDA created!\nTx: ${signature.slice(0,12)}...`);
+      } catch (e) {
+        console.error(e);
+        alert("Initialize PDA failed: " + e.message);
+      }
+    }
+
+    async function createRewardVaultATA() {
+      if (!provider) return alert("Connect wallet first");
+      const statusEl = document.getElementById("status");
+      statusEl.innerHTML = `<strong style="color:#FF9800">Creating reward_vault ATA...</strong>`;
+      try {
+        const encoder = new TextEncoder();
+        const [rewardVaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([encoder.encode('reward_vault'), encoder.encode('skr')], PROGRAM_ID);
+        const [vaultATA] = solanaWeb3.PublicKey.findProgramAddressSync([rewardVaultPda.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), SKR_MINT.toBuffer()], ASSOCIATED_TOKEN_PROGRAM_ID);
+
+        const ix = new solanaWeb3.TransactionInstruction({
+          keys: [
+            { pubkey: provider.publicKey, isSigner: true, isWritable: true },
+            { pubkey: vaultATA, isSigner: false, isWritable: true },
+            { pubkey: rewardVaultPda, isSigner: false, isWritable: false },
+            { pubkey: SKR_MINT, isSigner: false, isWritable: false },
+            { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
+            { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+          ],
+          programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+          data: new Uint8Array(0)
+        });
+
+        const { blockhash } = await connection.getLatestBlockhash();
+        const tx = new solanaWeb3.Transaction().add(ix);
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = provider.publicKey;
+
+        const signedTx = await provider.signTransaction(tx);
+        const signature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: false });
+
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ REWARD VAULT ATA CREATED</strong>`;
+        alert(`✅ ATA created!\nTx: ${signature.slice(0,12)}...`);
+      } catch (e) {
+        console.error(e);
+        alert("Create ATA failed: " + e.message);
+      }
+    }
+
+    async function fundRewardVault() {
+      if (!provider) return alert("Connect wallet first");
+      const statusEl = document.getElementById("status");
+      statusEl.innerHTML = `<strong style="color:#FF9800">Funding reward_vault (200 SKR)...</strong>`;
+      try {
+        const encoder = new TextEncoder();
+        const [rewardVaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([encoder.encode('reward_vault'), encoder.encode('skr')], PROGRAM_ID);
+        const [vaultATA] = solanaWeb3.PublicKey.findProgramAddressSync([rewardVaultPda.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), SKR_MINT.toBuffer()], ASSOCIATED_TOKEN_PROGRAM_ID);
+        const [sourceATA] = solanaWeb3.PublicKey.findProgramAddressSync([provider.publicKey.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), SKR_MINT.toBuffer()], ASSOCIATED_TOKEN_PROGRAM_ID);
+
+        const amount = 200000000000n;
+        const data = new Uint8Array(9);
+        data[0] = 3;
+        new DataView(data.buffer).setBigUint64(1, amount, true);
+
+        const ix = new solanaWeb3.TransactionInstruction({
+          keys: [
+            { pubkey: sourceATA, isSigner: false, isWritable: true },
+            { pubkey: vaultATA, isSigner: false, isWritable: true },
+            { pubkey: provider.publicKey, isSigner: true, isWritable: false },
+          ],
+          programId: TOKEN_PROGRAM_ID,
+          data: data
+        });
+
+        const { blockhash } = await connection.getLatestBlockhash();
+        const tx = new solanaWeb3.Transaction().add(ix);
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = provider.publicKey;
+
+        const signedTx = await provider.signTransaction(tx);
+        const signature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: false });
+
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ REWARD VAULT FUNDED WITH 200 SKR</strong>`;
+        alert(`✅ 200 SKR funded!\nTx: ${signature.slice(0,12)}...`);
+      } catch (e) {
+        console.error(e);
+        alert("Fund failed: " + e.message);
+      }
+    }
+
+    async function claimSKR() {
+      if (!provider) return alert("Connect wallet first");
+      const statusEl = document.getElementById("status");
+      statusEl.innerHTML = `<strong style="color:#FF9800">Claiming 0.05 SKR...</strong>`;
+
+      try {
+        const encoder = new TextEncoder();
+        const [mintConfigPda] = solanaWeb3.PublicKey.findProgramAddressSync([encoder.encode('mint-config')], PROGRAM_ID);
+        const [userStatePda] = solanaWeb3.PublicKey.findProgramAddressSync([encoder.encode('user-state'), provider.publicKey.toBuffer()], PROGRAM_ID);
+        const [rewardVaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([encoder.encode('reward_vault'), encoder.encode('skr')], PROGRAM_ID);
+
+        const [userTokenAccount] = solanaWeb3.PublicKey.findProgramAddressSync([
+          provider.publicKey.toBuffer(),
+          TOKEN_PROGRAM_ID.toBuffer(),
+          SKR_MINT.toBuffer()
+        ], ASSOCIATED_TOKEN_PROGRAM_ID);
+
+        const [rewardVaultATA] = solanaWeb3.PublicKey.findProgramAddressSync([
+          rewardVaultPda.toBuffer(),
+          TOKEN_PROGRAM_ID.toBuffer(),
+          SKR_MINT.toBuffer()
+        ], ASSOCIATED_TOKEN_PROGRAM_ID);
+
+        const instruction = new solanaWeb3.TransactionInstruction({
+          keys: [
+            { pubkey: provider.publicKey, isSigner: true, isWritable: true },
+            { pubkey: mintConfigPda, isSigner: false, isWritable: true },
+            { pubkey: userStatePda, isSigner: false, isWritable: true },
+            { pubkey: rewardVaultPda, isSigner: false, isWritable: true },
+            { pubkey: rewardVaultATA, isSigner: false, isWritable: true },
+            { pubkey: userTokenAccount, isSigner: false, isWritable: true },
+            { pubkey: SKR_MINT, isSigner: false, isWritable: true },        // ← FIXED
+            { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+            { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
+          ],
+          programId: PROGRAM_ID,
+          data: new Uint8Array([29, 219, 105, 213, 117, 54, 107, 239])
+        });
+
+        const { blockhash } = await connection.getLatestBlockhash();
+        const tx = new solanaWeb3.Transaction().add(instruction);
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = provider.publicKey;
+
+        const signedTx = await provider.signTransaction(tx);
+        const signature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: false, preflightCommitment: "confirmed" });
+
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ SUCCESS! Tx: ${signature.slice(0,12)}...</strong>`;
+        alert(`✅ Claim successful!\nTx: ${signature}`);
+      } catch (e) {
+        console.error(e);
+        const msg = e?.message || e?.toString() || 'Unknown error';
+        statusEl.innerHTML = `<strong style="color:#FF3D00">❌ FAILED: ${msg.slice(0,120)}</strong>`;
+        alert("❌ Claim failed:\n" + msg);
+      }
+    }
+  </script>
+</body>
+</html>

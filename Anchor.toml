@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-fitness_sbt = "8VX7TDKB4U1LR3RT8wYpF4kEUGuimgyJDnv6LwtFA1FB"
+fitness_sbt = "5PwEGd5ndktrTHTTMpbbvmaqP2piChGgTgdyWP9Us9y6"
 
 [registry]
 url = "https://api.apr.dev"

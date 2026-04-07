@@ -2,40 +2,43 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>SolaNa Seeker — Daily X News Updater</title>
+  <title>SolaNa Seeker — Daily News Updater (13-day Ring Buffer)</title>
   <style>
-    body {font-family: system-ui; background:#0A0A0A; color:#00FF9D; padding:30px; max-width:900px; margin:0 auto;}
-    h1 {color:#00FF9D;}
-    button {background:#00C853; color:#000; border:none; padding:16px 28px; font-size:18px; font-weight:700; border-radius:12px; cursor:pointer; margin:8px 0;}
-    .redButton {background:#FF3D00 !important;}
+    body {font-family: system-ui; background:#0A0A0A; color:#00FF9D; padding:30px; max-width:920px; margin:0 auto;}
+    h1 {color:#00FF9D; margin-bottom:8px;}
+    button {background:#00C853; color:#000; border:none; padding:16px 28px; font-size:18px; font-weight:700; border-radius:12px; cursor:pointer; margin:8px 4px;}
     .tealButton {background:#00B8D4 !important;}
-    input, textarea, select {width:100%; background:#111; color:#0F0; padding:14px; border-radius:12px; border:2px solid #00FF9D; margin-bottom:12px; font-size:16px;}
-    .post {background:#1E1E1E; padding:16px; border-radius:12px; margin-bottom:12px;}
-    .status {font-size:16px; padding:12px; border-radius:12px; background:#1E1E1E; margin:12px 0;}
-    .note {background:#1E1E1E; padding:14px; border-radius:12px; font-size:15px; margin-top:20px;}
+    input, textarea, select {width:100%; background:#111; color:#0F0; padding:14px; border-radius:12px; border:2px solid #00FF9D; margin-bottom:12px; font-size:16;}
+    .post {background:#1E1E1E; padding:18px; border-radius:14px; margin-bottom:16px;}
+    .status {font-size:16px; padding:14px; border-radius:12px; background:#1E1E1E; margin:12px 0;}
+    .note {background:#1E1E1E; padding:16px; border-radius:14px; font-size:15px; margin-top:24px; line-height:1.5;}
+    .size {color:#FF9800; font-weight:700;}
   </style>
   <script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
 </head>
 <body>
-  <h1>📰 SolaNa Seeker Daily X News Updater</h1>
+  <h1>📰 SolaNa Seeker Daily News Updater</h1>
+  <p style="color:#888; margin-top:0;">13-thread ring buffer • Auto Snowflake video_date</p>
   
   <button onclick="connectWallet()">🔗 CONNECT WALLET (Seed Vault)</button>
   <button onclick="showPdaOnSolscan()">🔎 View PDA on Solscan</button>
   <button onclick="showCurrentNewsFromPda()" class="tealButton">🔍 Show Current On-Chain JSON</button>
   
-  <div id="status" class="status">READY — paste 6 links (Main + 5 replies) → Add Full Thread → UPDATE</div>
+  <div id="status" class="status">READY — Paste 6 X links (Main first) → Add Thread</div>
 
-  <input id="urlInput" type="text" placeholder="Paste 6 comma-separated X links: Main post first, then 5 replies" />
+  <input id="urlInput" type="text" placeholder="Paste exactly 6 comma-separated X links: Main post first, then 5 replies" />
 
-  <button onclick="addSingleThread()" class="tealButton">➕ Add Full Thread (Main + 5 replies)</button>
-  <button onclick="updateDailyNews()" class="tealButton">🚀 UPDATE DAILY NEWS ON-CHAIN (devnet)</button>
+  <button onclick="addSingleThread()" class="tealButton">➕ Add Full Thread (Auto Timestamp + Video Date)</button>
+  <button onclick="updateDailyNews()" class="tealButton">🚀 UPDATE DAILY NEWS ON-CHAIN (13 max)</button>
 
   <div id="postList"></div>
 
   <div class="note">
-    ✅ New format: 6 links total (Main post first, then 5 sub/replies)<br>
-    ✅ The first link becomes the main post, the other 5 go into postIds<br>
-    ✅ This will look much better in the App.tsx news feed
+    ✅ Max 13 threads (oldest auto-dropped when full)<br>
+    ✅ Snowflake ID → real timestamp + video_date auto-filled from main post<br>
+    ✅ Live size counter (safe under 35 KB)<br>
+    ✅ App will sort newest → oldest automatically<br>
+    ✅ Replace PLACEHOLDER in videoUrl with real filename (yt-dlp)
   </div>
 
   <script>
@@ -44,10 +47,11 @@
     let PROGRAM_ID;
     let posts = [];
 
+    const TWITTER_EPOCH = 1288834974657;
+
     window.addEventListener('load', () => {
       connection = new solanaWeb3.Connection("https://api.devnet.solana.com", "confirmed");
       PROGRAM_ID = new solanaWeb3.PublicKey("8VX7TDKB4U1LR3RT8wYpF4kEUGuimgyJDnv6LwtFA1FB");
-      document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">READY — paste 6 links (Main first) → Add Full Thread</strong>`;
       renderPostList();
     });
 
@@ -57,8 +61,10 @@
       provider = window.solana;
       try {
         await provider.connect();
-        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ CONNECTED</strong>`;
-      } catch (e) { statusEl.innerHTML = `<strong style="color:#FF3D00">Connect failed</strong>`; }
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ WALLET CONNECTED</strong>`;
+      } catch (e) {
+        statusEl.innerHTML = `<strong style="color:#FF3D00">Connect failed</strong>`;
+      }
     }
 
     async function showPdaOnSolscan() {
@@ -78,53 +84,80 @@
       } catch(e){ alert("Debug error: " + e.message); }
     }
 
-  function addSingleThread() {
+    function tweetIdToTimestamp(tweetId) {
+      const id = BigInt(tweetId);
+      const timestampMs = Number((id >> 22n) + BigInt(TWITTER_EPOCH));
+      return Math.floor(timestampMs / 1000); // Unix seconds
+    }
+
+    function addSingleThread() {
       const input = document.getElementById("urlInput").value.trim();
-      if (!input) return alert("Paste the 6 links separated by commas");
+      if (!input) return alert("Paste exactly 6 links separated by commas");
 
       const links = input.split(',').map(l => l.trim()).filter(l => l);
-      if (links.length < 5 || links.length > 6) {
-        return alert("Please enter 5 or 6 full X links separated by commas");
+      if (links.length !== 6) return alert("Exactly 6 links required (Main + 5 replies)");
+
+      const mainUrl = links[0];
+      const now = Math.floor(Date.now() / 1000);
+      const today = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'});
+
+      // Extract main tweet ID
+      const tweetMatch = mainUrl.match(/status\/(\d+)/);
+      const mainTweetId = tweetMatch ? tweetMatch[1] : "";
+
+      let timestamp = now;
+      let videoDate = today;
+
+      if (mainTweetId) {
+        timestamp = tweetIdToTimestamp(mainTweetId);
+        const tweetDate = new Date(timestamp * 1000);
+        videoDate = tweetDate.toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'});
+        console.log(`✅ Snowflake timestamp extracted: ${videoDate} (${timestamp})`);
       }
 
-      const today = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'});
+      let detectedVideoUrl = "";
+      if (mainTweetId) {
+        detectedVideoUrl = `https://video.twimg.com/amplify_video/${mainTweetId}/vid/avc1/464x688/PLACEHOLDER.mp4?tag=24`;
+      }
 
       posts.push({
         id: `thread-${Date.now()}`,
+        timestamp: timestamp,
         date: today,
+        video_date: videoDate,                    // ← real date from tweet
         title: "Daily Longevity Thread",
-        content: `Full ${links.length}-post thread from @optima_sanitas`,
-        postUrls: links,                    // ← NOW STORES FULL LINKS
-        postIds: links.map(link => {        // keep old field for safety during transition
-          const match = link.match(/status\/(\d+)/);
-          return match ? match[1] : link;
-        }),
-        videoTag: "Video1",
-        videoUrl: ""
+        content: `Full 6-post thread from @optima_sanitas`,
+        postUrls: links,
+        postIds: links.map(l => { const m = l.match(/status\/(\d+)/); return m ? m[1] : l; }),
+        videoUrl: detectedVideoUrl,
+        videoTag: "Video1"
       });
 
-      console.log(`✅ Thread added with ${links.length} full URLs`);
-      alert(`✅ ${links.length}-post thread with FULL links added!\nNow click UPDATE DAILY NEWS`);
+      alert(`✅ Thread added!\nTimestamp: ${videoDate}\nCheck console for details.`);
       renderPostList();
       document.getElementById("urlInput").value = "";
     }
 
     function renderPostList() {
       const container = document.getElementById("postList");
-      container.innerHTML = `<h3 style="color:#00FF9D">Posts ready today (${posts.length})</h3>`;
+      container.innerHTML = `<h3 style="color:#00FF9D">Threads ready (${posts.length}/13)</h3>`;
+      
       if (posts.length === 0) {
         container.innerHTML += `<p style="color:#888">No threads added yet</p>`;
         return;
       }
+
       posts.forEach((post, i) => {
         const div = document.createElement("div");
         div.className = "post";
         div.innerHTML = `
-          <p><strong>Thread #${i+1}</strong> — Main + 5 replies</p>
+          <p><strong>Thread #${i+1}</strong> — ${post.date} | ${post.video_date}</p>
           <label>Title</label><input type="text" value="${post.title}" onchange="posts[${i}].title = this.value" />
           <label>Content Summary</label><textarea onchange="posts[${i}].content = this.value">${post.content}</textarea>
-          <label>Video URL (optional)</label>
-          <input type="text" value="${post.videoUrl}" onchange="posts[${i}].videoUrl = this.value" placeholder="https://video.twimg.com/..." />
+          <label>Video URL (replace PLACEHOLDER)</label>
+          <input type="text" value="${post.videoUrl || ''}" onchange="posts[${i}].videoUrl = this.value" placeholder="https://video.twimg.com/..." />
+          <label>Video Date (auto-filled)</label>
+          <input type="text" value="${post.video_date}" onchange="posts[${i}].video_date = this.value" />
           <button onclick="posts.splice(${i},1); renderPostList();" style="background:#FF3D00; font-size:14px; padding:8px 16px;">Remove Thread</button>
         `;
         container.appendChild(div);
@@ -133,18 +166,26 @@
 
     async function updateDailyNews() {
       if (!provider) return alert("Connect wallet first");
-      if (posts.length === 0) return alert("Add the thread first");
+      if (posts.length === 0) return alert("Add at least one thread first");
+
+      // Ring buffer: keep only newest 13
+      if (posts.length > 13) {
+        posts.sort((a, b) => b.timestamp - a.timestamp);
+        posts = posts.slice(0, 13);
+      }
 
       const newsJson = JSON.stringify(posts, null, 2);
-      console.log("🧪 JSON to send:", newsJson);
-      alert("✅ JSON size: " + newsJson.length + " bytes");
+      const jsonSize = newsJson.length;
 
-      if (newsJson.length > 12000) return alert(`❌ JSON too big (${newsJson.length} bytes)`);
+      console.log("🧪 Final JSON size:", jsonSize, "bytes");
+      document.getElementById("status").innerHTML = `<span class="size">📏 ${jsonSize} bytes</span> — building tx...`;
+
+      if (jsonSize > 34000) return alert(`❌ JSON too big (${jsonSize} bytes). Max ~34 KB for 13 threads.`);
 
       try {
         const [dailyNewsPda] = await solanaWeb3.PublicKey.findProgramAddress([new TextEncoder().encode("daily-news-seeker-final")], PROGRAM_ID);
 
-        const discriminator = new Uint8Array([34, 136, 110, 102, 49, 52, 170, 48]);
+        const discriminator = new Uint8Array([34, 136, 110, 102, 49, 52, 170, 48]); // update_daily_news
 
         const jsonBytes = new TextEncoder().encode(newsJson);
         const lengthBuf = new Uint8Array(4);
@@ -173,11 +214,11 @@
         const signedTx = await provider.signTransaction(tx);
         const signature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true, preflightCommitment: "confirmed" });
 
-        alert(`✅ SUCCESS! Daily news updated on-chain\nTx: ${signature.slice(0,12)}...`);
+        alert(`✅ SUCCESS! Daily news updated\nTx: ${signature.slice(0,12)}...`);
         document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">✅ LIVE ON-CHAIN — refresh Seeker app news feed!</strong>`;
       } catch (e) {
-        console.error(e);
-        alert(`❌ Update failed:\n${e.message}\n\nCheck console for details`);
+        console.error("❌ Update error:", e);
+        alert(`❌ Update failed:\n${e.message}\n\nCheck console (F12)`);
       }
     }
   </script>
