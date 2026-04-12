@@ -1,11 +1,12 @@
 [package]
-name = "fitness-sbt"
+name = "sanitas_seeker"
 version = "0.1.0"
 description = "Fitness SBT Program"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
+name = "sanitas_seeker"
 
 [dependencies]
 anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }

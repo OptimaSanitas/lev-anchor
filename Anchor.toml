@@ -6,14 +6,13 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-fitness_sbt = "5PwEGd5ndktrTHTTMpbbvmaqP2piChGgTgdyWP9Us9y6"
-
-[registry]
-url = "https://api.apr.dev"
+sanitas_seeker = "HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18"
 
 [provider]
-cluster = "Localnet"
-wallet = "/home/gman/.config/solana/devnet-keypair.json"
+cluster = "localnet"
+wallet = "~/.config/solana/devnet-keypair.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[hooks]

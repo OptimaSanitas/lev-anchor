@@ -18,7 +18,7 @@
 </head>
 <body>
   <h1>📰 SolaNa Seeker Daily News Updater</h1>
-  <p style="color:#888; margin-top:0;">13-thread ring buffer • Auto Snowflake video_date</p>
+  <p style="color:#888; margin-top:0;">13-thread ring buffer • NEW PROGRAM ID: HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18</p>
   
   <button onclick="connectWallet()">🔗 CONNECT WALLET (Seed Vault)</button>
   <button onclick="showPdaOnSolscan()">🔎 View PDA on Solscan</button>
@@ -51,7 +51,7 @@
 
     window.addEventListener('load', () => {
       connection = new solanaWeb3.Connection("https://api.devnet.solana.com", "confirmed");
-      PROGRAM_ID = new solanaWeb3.PublicKey("8VX7TDKB4U1LR3RT8wYpF4kEUGuimgyJDnv6LwtFA1FB");
+      PROGRAM_ID = new solanaWeb3.PublicKey("HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18");
       renderPostList();
     });
 
@@ -87,7 +87,7 @@
     function tweetIdToTimestamp(tweetId) {
       const id = BigInt(tweetId);
       const timestampMs = Number((id >> 22n) + BigInt(TWITTER_EPOCH));
-      return Math.floor(timestampMs / 1000); // Unix seconds
+      return Math.floor(timestampMs / 1000);
     }
 
     function addSingleThread() {
@@ -101,7 +101,6 @@
       const now = Math.floor(Date.now() / 1000);
       const today = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'});
 
-      // Extract main tweet ID
       const tweetMatch = mainUrl.match(/status\/(\d+)/);
       const mainTweetId = tweetMatch ? tweetMatch[1] : "";
 
@@ -112,7 +111,6 @@
         timestamp = tweetIdToTimestamp(mainTweetId);
         const tweetDate = new Date(timestamp * 1000);
         videoDate = tweetDate.toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'});
-        console.log(`✅ Snowflake timestamp extracted: ${videoDate} (${timestamp})`);
       }
 
       let detectedVideoUrl = "";
@@ -124,7 +122,7 @@
         id: `thread-${Date.now()}`,
         timestamp: timestamp,
         date: today,
-        video_date: videoDate,                    // ← real date from tweet
+        video_date: videoDate,
         title: "Daily Longevity Thread",
         content: `Full 6-post thread from @optima_sanitas`,
         postUrls: links,
@@ -168,7 +166,6 @@
       if (!provider) return alert("Connect wallet first");
       if (posts.length === 0) return alert("Add at least one thread first");
 
-      // Ring buffer: keep only newest 13
       if (posts.length > 13) {
         posts.sort((a, b) => b.timestamp - a.timestamp);
         posts = posts.slice(0, 13);
