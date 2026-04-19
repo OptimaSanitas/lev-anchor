@@ -41,15 +41,35 @@
   <button onclick="viewMintConfigOnSolscan()" class="tealButton">🔎 View Mint Config on Solscan (devnet)</button>
 
   <div id="status" class="status">READY — tap CONNECT WALLET</div>
+<h3 style="color:#00FF9D; margin-top:30px;">🔍 View Reward Pools on Solscan (devnet)</h3>
+<button onclick="viewRewardPoolPDA()" class="tealButton">View Reward Pool PDA</button>
+<button onclick="viewRewardPoolATA()" class="tealButton">View Reward Pool ATA (SKR balance)</button>
+<button onclick="viewBootstrapPoolPDA()" class="tealButton">View Bootstrap Pool PDA</button>
+<button onclick="viewBootstrapPoolATA()" class="tealButton">View Bootstrap Pool ATA (SKR balance)</button>
+<button onclick="viewSKRMint()" class="orangeButton">View SKR Mint on Solscan</button>
+
+<button onclick="createStakeVaultATA()" class="orangeButton">🚀 Create Stake Vault ATA (PDA-owned)</button>
+
+<button onclick="createDevnetGenesisMint()" class="orangeButton">🚀 Create Devnet Genesis Mint (Token-2022) → Phone Wallet</button>
 
   <script>
     let provider = null;
     let connection;
-    const PROGRAM_ID = new solanaWeb3.PublicKey("HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18");
-    const SKR_MINT = new solanaWeb3.PublicKey("DCrfzg5T8hijkX8EM6oN9sh4Ucm1AMqqNZQZBGTbmofQ");
-    const TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+      const TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
     const ASSOCIATED_TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
     const SYSTEM_PROGRAM_ID = new solanaWeb3.PublicKey("11111111111111111111111111111111");
+
+
+    const IS_MAINNET = false;
+
+    const PROGRAM_ID = IS_MAINNET 
+      ? new solanaWeb3.PublicKey('YOUR_MAINNET_PROGRAM_ID_HERE')
+      : new solanaWeb3.PublicKey("HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18");
+
+    const SKR_MINT = IS_MAINNET 
+      ? new solanaWeb3.PublicKey('YOUR_MAINNET_SKR_MINT_HERE')
+      : new solanaWeb3.PublicKey("DCrfzg5T8hijkX8EM6oN9sh4Ucm1AMqqNZQZBGTbmofQ");
+
 
     // === YOUR EXACT HELIUS DEVNET RPC ===
     window.addEventListener('load', () => {
@@ -128,7 +148,174 @@
         statusEl.innerHTML = `<strong style="color:#FF3D00">Failed</strong>`;
         alert("ATA creation error:\n" + e.message);
       }
-    };
+    }; 
+
+
+
+
+<!-- === REUSABLE DEVNET GENESIS MINT (desktop wallet signs everything) === -->
+window.createDevnetGenesisMint = async function() {
+  if (!provider) return alert("❌ Connect your desktop admin wallet first (B9Qo...)");
+
+  const statusEl = document.getElementById("status");
+  statusEl.innerHTML = `<strong style="color:#FF9800">Minting Genesis NFT to phone wallet via desktop wallet...</strong>`;
+
+  try {
+    const TOKEN_2022_PROGRAM_ID = new solanaWeb3.PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+    const MINT = new solanaWeb3.PublicKey("44CoBuympqkridwmSenL5DhkGX9SPALWTotwQsMfDzjy");
+    const PHONE_WALLET = new solanaWeb3.PublicKey("2PAdkp9KzVCkasajrvMGjBTgdYXmtgLCG4HembfTQ3jv");
+    const ASSOCIATED_TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+
+    // Calculate ATA for phone wallet
+    const [ata] = await solanaWeb3.PublicKey.findProgramAddress(
+      [PHONE_WALLET.toBuffer(), TOKEN_2022_PROGRAM_ID.toBuffer(), MINT.toBuffer()],
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
+    console.log("ATA:", ata.toString());
+
+    // Create ATA instruction
+    const createAtaIx = new solanaWeb3.TransactionInstruction({
+      keys: [
+        { pubkey: provider.publicKey, isSigner: true, isWritable: true },
+        { pubkey: ata, isSigner: false, isWritable: true },
+        { pubkey: PHONE_WALLET, isSigner: false, isWritable: false },
+        { pubkey: MINT, isSigner: false, isWritable: false },
+        { pubkey: solanaWeb3.SystemProgram.programId, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false }
+      ],
+      programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+      data: new Uint8Array(0)
+    });
+
+    // Mint 1 token instruction
+    const mintToData = new Uint8Array(9);
+    mintToData[0] = 7;   // MintTo
+    mintToData[1] = 1;   // amount = 1
+
+    const mintToIx = new solanaWeb3.TransactionInstruction({
+      keys: [
+        { pubkey: MINT, isSigner: false, isWritable: true },
+        { pubkey: ata, isSigner: false, isWritable: true },
+        { pubkey: provider.publicKey, isSigner: true, isWritable: false }
+      ],
+      programId: TOKEN_2022_PROGRAM_ID,
+      data: mintToData
+    });
+
+    // Build and send transaction
+    const { blockhash } = await connection.getLatestBlockhash();
+    const tx = new solanaWeb3.Transaction()
+      .add(createAtaIx)
+      .add(mintToIx);
+
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = provider.publicKey;
+
+    const signedTx = await provider.signTransaction(tx);
+    const signature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
+
+    console.log("✅ Signature:", signature);
+    statusEl.innerHTML = `<strong style="color:#00FF9D">✅ GENESIS NFT MINTED TO PHONE WALLET</strong><br>Signature: ${signature.slice(0,12)}...`;
+
+    alert(`✅ Success!\n\nGenesis NFT minted to phone wallet.\nSignature: ${signature}`);
+
+  } catch (e) {
+    console.error("❌ Error:", e);
+    statusEl.innerHTML = `<strong style="color:#FF3D00">Failed — check console (F12)</strong>`;
+    alert("Error: " + e.message);
+  }
+};
+
+
+
+
+// === NEW: Reward Pool Viewers (dynamic PDA + ATA) ===
+  window.viewRewardPoolPDA = async function() {
+    const [pda] = await solanaWeb3.PublicKey.findProgramAddress([new TextEncoder().encode("reward-pool")], PROGRAM_ID);
+    window.open(`https://solscan.io/account/${pda}?cluster=devnet`, "_blank");
+  };
+
+window.viewRewardPoolATA = async function() {
+    try {
+      console.log("🔍 Calculating Reward Pool ATA...");
+      const [pda] = await solanaWeb3.PublicKey.findProgramAddress([new TextEncoder().encode("reward-pool")], PROGRAM_ID);
+      console.log("Reward Pool PDA:", pda.toString());
+
+      const [ata] = await solanaWeb3.PublicKey.findProgramAddress([
+        pda.toBuffer(),
+        TOKEN_PROGRAM_ID.toBuffer(),
+        SKR_MINT.toBuffer()
+      ], ASSOCIATED_TOKEN_PROGRAM_ID);
+
+      console.log("✅ Reward Pool ATA:", ata.toString());
+      window.open(`https://solscan.io/account/${ata}?cluster=devnet`, "_blank");
+    } catch (e) {
+      console.error("❌ viewRewardPoolATA failed:", e);
+      alert("ATA calculation error:\n" + e.message + "\n\nCheck console (F12)");
+    }
+  };
+
+  window.viewBootstrapPoolPDA = async function() {
+    const [pda] = await solanaWeb3.PublicKey.findProgramAddress([new TextEncoder().encode("bootstrap-pool")], PROGRAM_ID);
+    window.open(`https://solscan.io/account/${pda}?cluster=devnet`, "_blank");
+  };
+
+  window.viewBootstrapPoolATA = async function() {
+    try {
+      console.log("🔍 Calculating Bootstrap Pool ATA...");
+      const [pda] = await solanaWeb3.PublicKey.findProgramAddress([new TextEncoder().encode("bootstrap-pool")], PROGRAM_ID);
+      console.log("Bootstrap Pool PDA:", pda.toString());
+
+      const [ata] = await solanaWeb3.PublicKey.findProgramAddress([
+        pda.toBuffer(),
+        TOKEN_PROGRAM_ID.toBuffer(),
+        SKR_MINT.toBuffer()
+      ], ASSOCIATED_TOKEN_PROGRAM_ID);
+
+      console.log("✅ Bootstrap Pool ATA:", ata.toString());
+      window.open(`https://solscan.io/account/${ata}?cluster=devnet`, "_blank");
+    } catch (e) {
+      console.error("❌ viewBootstrapPoolATA failed:", e);
+      alert("ATA calculation error:\n" + e.message + "\n\nCheck console (F12)");
+    }
+  };
+
+  window.viewSKRMint = function() {
+    window.open(`https://solscan.io/account/${SKR_MINT}?cluster=devnet`, "_blank");
+  };
+
+
+    window.createStakeVaultATA = async function() {
+    if (!provider) return alert("❌ Connect admin wallet first");
+    const statusEl = document.getElementById("status");
+    statusEl.innerHTML = `<strong style="color:#FF9800">Creating Stake Vault ATA...</strong>`;
+    try {
+      const [stakeVaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([new TextEncoder().encode("stake-vault")], PROGRAM_ID);
+      const [ata] = solanaWeb3.PublicKey.findProgramAddressSync([stakeVaultPda.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), SKR_MINT.toBuffer()], ASSOCIATED_TOKEN_PROGRAM_ID);
+      const ix = new solanaWeb3.TransactionInstruction({
+        keys: [
+          { pubkey: provider.publicKey, isSigner: true, isWritable: true },
+          { pubkey: ata, isSigner: false, isWritable: true },
+          { pubkey: stakeVaultPda, isSigner: false, isWritable: false },
+          { pubkey: SKR_MINT, isSigner: false, isWritable: false },
+          { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
+          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+          { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }
+        ],
+        programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+        data: new Uint8Array(0)
+      });
+      const { blockhash } = await connection.getLatestBlockhash();
+      const tx = new solanaWeb3.Transaction().add(ix);
+      tx.recentBlockhash = blockhash; tx.feePayer = provider.publicKey;
+      const signedTx = await provider.signTransaction(tx);
+      const signature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
+      statusEl.innerHTML = `<strong style="color:#00FF9D">✅ Stake Vault ATA created</strong>`;
+      alert(`✅ Stake Vault ATA ready!\n${ata.toString().slice(0,12)}...`);
+    } catch (e) { console.error(e); alert("Stake Vault error: " + e.message); }
+  };
+
 
     // === ALL YOUR ORIGINAL FUNCTIONS (100% untouched — paste your original code here if you removed them) ===
     async function createBootstrapPoolATA() { /* your original code */ }
@@ -139,5 +326,5 @@
     async function debugMintConfigAuthority() { /* your original code */ }
     async function viewMintConfigOnSolscan() { /* your original code */ }
   </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9ebcedfa3b276d01',t:'MTc3NjEwOTA5MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
