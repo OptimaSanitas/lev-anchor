@@ -5,12 +5,15 @@ anchor_version = "1.0.0"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-sanitas_seeker = "HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18"
+[programs.devnet]
+sanitas_seeker = "2ciBmyoCyT1f6Tu33V48kqxhu3f13qx7vXUA5se6Ydth"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/devnet-keypair.json"
+
+[upgrade_authority]
+devnet = "2PHVFvQ6m9GLRaLiVW5FkG689C1rrUGfeEgNxSd7meoW"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

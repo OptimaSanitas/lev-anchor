@@ -28,7 +28,20 @@ fn get_day(timestamp: i64) -> u32 {
 // Genesis NFT constant
 pub const GENESIS_MINT: Pubkey = pubkey!("GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te");
 
-declare_id!("HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18");
+declare_id!("2ciBmyoCyT1f6Tu33V48kqxhu3f13qx7vXUA5se6Ydth");
+
+// ============================================================
+// MULTISIG CONFIGURATION (3-of-5) - UPGRADE AUTHORITY
+// ============================================================
+// Multisig Address: 2PHVFvQ6m9GLRaLiVW5FkG689C1rrUGfeEgNxSd7meoW
+// Threshold: 3 / 5
+// Signers:
+//   1. 5fkgfLSGCxJTWcqQHfzigQUnxA1NAaCmmCjQbXmTvVzc
+//   2. CwyNHESJ95mccZkGPEEApQdeB4XEV5mSL1SRkn6Ee8qG
+//   3. 8TeEjQkh2CQTbKo57r3n5GrYGYUzvrmbj1eRJgbjZsjp
+//   4. BpDZ6jrcPYo1GoM4DWk857ys4R7MgyZb4FmHjkC9beuH
+//   5. CQsV3Wj6pdcgEkk5hkS6bd31Q2xp9fCuAqvV9WoLjqAR
+// ============================================================
 
 
 #[error_code]
@@ -113,7 +126,7 @@ pub mod sanitas_seeker {
 
         token::mint_to(
             CpiContext::new(
-                ctx.accounts.token_program.key(),           // ← must be .key() on your Anchor version
+                ctx.accounts.token_program.key(),           // matches your Anchor version
                 MintTo {
                     mint: ctx.accounts.skr_mint.to_account_info(),
                     to: ctx.accounts.destination.to_account_info(),
@@ -129,12 +142,21 @@ pub mod sanitas_seeker {
 
     
     pub fn claim_daily_skr(ctx: Context<ClaimDailySKR>) -> Result<()> {
+        // SECURITY FIX: Add Genesis NFT verification (was missing - critical, non-holders could claim)
+        verify_seeker_genesis_ownership(&ctx.accounts.user, &ctx.accounts.user_genesis_ata)?;
+
+        // SECURITY FIX: Add daily claim guard (was missing - could claim multiple times/day)
+        let now = Clock::get()?.unix_timestamp;
+        let now_day = get_day(now);
+        let user_ex = &mut ctx.accounts.user_exercise;
+        require!(user_ex.last_active_day < now_day, ErrorCode::AlreadyClaimedToday);
+
         let amount: u64 = 50_000_000; // 0.05 SKR
 
         if ctx.accounts.bootstrap_pool_token.amount >= amount {
             token::transfer(
                 CpiContext::new_with_signer(
-                    ctx.accounts.token_program.key(),
+                    ctx.accounts.token_program.key(),  // matches your Anchor version
                     Transfer {
                         from: ctx.accounts.bootstrap_pool_token.to_account_info(),
                         to: ctx.accounts.user_token_account.to_account_info(),
@@ -149,7 +171,7 @@ pub mod sanitas_seeker {
             require!(ctx.accounts.reward_pool_token.amount >= amount, ErrorCode::InsufficientRewardPool);
             token::transfer(
                 CpiContext::new_with_signer(
-                    ctx.accounts.token_program.key(),
+                    ctx.accounts.token_program.key(),  // matches your Anchor version
                     Transfer {
                         from: ctx.accounts.reward_pool_token.to_account_info(),
                         to: ctx.accounts.user_token_account.to_account_info(),
@@ -162,8 +184,7 @@ pub mod sanitas_seeker {
             msg!("✅ 0.05 SKR from reward pool");
         }
 
-        let user_ex = &mut ctx.accounts.user_exercise;
-        user_ex.last_active_day = get_day(Clock::get()?.unix_timestamp);
+        user_ex.last_active_day = now_day;
 
         Ok(())
     }
@@ -200,9 +221,7 @@ pub mod sanitas_seeker {
         distance_walked: u64,
         distance_ran: u64,
     ) -> Result<()> {
-        require_keys_eq!(ctx.accounts.user_genesis_ata.mint, GENESIS_MINT, ErrorCode::MissingGenesisNft);
-        require!(ctx.accounts.user_genesis_ata.amount >= 1, ErrorCode::MissingGenesisNft);
-        require_keys_eq!(ctx.accounts.user_genesis_ata.owner, ctx.accounts.user.key(), ErrorCode::Unauthorized);
+        verify_seeker_genesis_ownership(&ctx.accounts.user, &ctx.accounts.user_genesis_ata)?;
 
         let user_state = &mut ctx.accounts.user_state;
         user_state.sets_completed = user_state.sets_completed.saturating_add(sets);
@@ -240,7 +259,7 @@ pub fn claim_daily_reward(
         let signer_seeds = &[&seeds[..]];
 
         let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.system_program.key(),           // ← must stay .key() (matches your Anchor version)
+            ctx.accounts.system_program.key(),           // matches your Anchor version
             system_program::Transfer {
                 from: ctx.accounts.reward_vault.to_account_info(),
                 to: ctx.accounts.user.to_account_info(),
@@ -269,6 +288,8 @@ pub fn claim_daily_reward(
 
         require!(_exercise_id.len() <= 16, ErrorCode::InvalidExerciseId);
         require!(_video_id.len() <= 32, ErrorCode::InvalidExerciseId);
+        require!(label1.len() <= 64, ErrorCode::InvalidExerciseId); // NEW: prevent space overflow
+        require!(label2.len() <= 64, ErrorCode::InvalidExerciseId);
 
         let now = Clock::get()?.unix_timestamp;
         let now_day = get_day(now);
@@ -321,13 +342,16 @@ pub fn claim_daily_reward(
         ctx: Context<ExtendLegend>,
         _exercise_id: String,     // ← prefixed _ to kill unused warning
     ) -> Result<()> {
+        // SECURITY FIX: Add Genesis NFT check (was missing for consistency)
+        verify_seeker_genesis_ownership(&ctx.accounts.user, &ctx.accounts.user_genesis_ata)?;
+
         let user_ex = &mut ctx.accounts.user_exercise;
         let now = Clock::get()?.unix_timestamp;
 
         let amount: u64 = 1_000_000_000;
         token::transfer(
             CpiContext::new(
-                ctx.accounts.token_program.key(),
+                ctx.accounts.token_program.key(),  // matches your Anchor version
                 Transfer {
                     from: ctx.accounts.user_token_account.to_account_info(),
                     to: ctx.accounts.reward_pool_token.to_account_info(),
@@ -382,6 +406,7 @@ pub fn claim_daily_reward(
         new_uri: String,
     ) -> Result<()> {
         require!(exercise_id.len() <= 16, ErrorCode::InvalidExerciseId);
+        require!(new_uri.len() <= 200, ErrorCode::InvalidExerciseId); // NEW: prevent space overflow on SBT
         let sbt = &mut ctx.accounts.sbt;
         require_keys_eq!(sbt.owner, ctx.accounts.user.key(), ErrorCode::Unauthorized);
         sbt.uri = new_uri;
@@ -394,6 +419,7 @@ pub fn claim_daily_reward(
         new_descriptor: String,
     ) -> Result<()> {
         require!(exercise_id.len() <= 16, ErrorCode::InvalidExerciseId);
+        require!(new_descriptor.len() <= 200, ErrorCode::InvalidExerciseId); // NEW: prevent space overflow
         let sbt = &mut ctx.accounts.sbt;
         require_keys_eq!(sbt.owner, ctx.accounts.user.key(), ErrorCode::Unauthorized);
         sbt.uri = new_descriptor;   // note: this updates the same field as uri (per original code)
@@ -417,7 +443,7 @@ pub fn claim_daily_reward(
         );
 
         let cpi_ctx = CpiContext::new(
-            ctx.accounts.system_program.key(),   // ← Fixed: use .key() not .to_account_info()
+            ctx.accounts.system_program.key(),   // matches your Anchor version
             system_program::Transfer {
                 from: ctx.accounts.funds_account.to_account_info(),
                 to: ctx.accounts.recipient.to_account_info(),
@@ -426,7 +452,7 @@ pub fn claim_daily_reward(
 
         system_program::transfer(cpi_ctx, amount)?;
 
-        msg!("✅ Withdrew {} lamports from program keypair to B9Qo", amount);
+        msg!("✅ Withdrew {} lamports from admin wallet to recipient", amount);
         Ok(())
     }
 
@@ -523,6 +549,11 @@ pub struct ExtendLegend<'info> {
     pub user: Signer<'info>,
     pub skr_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
+    // SECURITY FIX: Added for Genesis check
+    #[account(address = GENESIS_MINT)]
+    pub genesis_mint: Account<'info, Mint>,
+    #[account(constraint = user_genesis_ata.mint == genesis_mint.key(), constraint = user_genesis_ata.owner == user.key())]
+    pub user_genesis_ata: Account<'info, TokenAccount>,
 }
  
 // === NEW: Exercise-wide Legend config ===
@@ -558,11 +589,11 @@ pub struct GetAvailableLegendSlots<'info> {
 #[derive(Accounts)]
 pub struct WithdrawSol<'info> {
     #[account(mut)]
-    pub funds_account: Signer<'info>,                    // Hyyet keypair holding SOL
+    pub funds_account: Signer<'info>,                    // Admin wallet holding SOL for recovery
     #[account(mut)]
-    pub recipient: SystemAccount<'info>,                 // B9Qo wallet
-    pub authority: Signer<'info>,                        // signer
-    /// CHECK: Upgrade authority
+    pub recipient: SystemAccount<'info>,                 // e.g. B9Qo wallet
+    pub authority: Signer<'info>,                        // signer (must match upgrade auth)
+    /// CHECK: Upgrade authority (will be multisig)
     pub upgrade_authority: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
@@ -653,19 +684,24 @@ pub struct ClaimDailySKR<'info> {
     #[account(mut, seeds = [b"bootstrap-pool"], bump)]
     pub bootstrap_pool: Account<'info, BootstrapPool>,
     #[account(mut, associated_token::mint = skr_mint, associated_token::authority = bootstrap_pool)]
-    pub bootstrap_pool_token: Account<'info, TokenAccount>,
+    pub bootstrap_pool_token: Box<Account<'info, TokenAccount>>,
     #[account(mut, seeds = [b"reward-pool"], bump)]
     pub reward_pool: Account<'info, RewardPool>,
     #[account(mut, associated_token::mint = skr_mint, associated_token::authority = reward_pool)]
-    pub reward_pool_token: Account<'info, TokenAccount>,
+    pub reward_pool_token: Box<Account<'info, TokenAccount>>,
     #[account(mut, seeds = [b"user-exercise", user.key().as_ref(), b"sprint-interval".as_ref()], bump)]
-    pub user_exercise: Account<'info, UserExerciseState>,
+    pub user_exercise: Box<Account<'info, UserExerciseState>>,
     #[account(mut, associated_token::mint = skr_mint, associated_token::authority = user)]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub skr_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
+    // SECURITY FIX: Added Genesis accounts (was missing)
+    #[account(address = GENESIS_MINT)]
+    pub genesis_mint: Account<'info, Mint>,
+    #[account(constraint = user_genesis_ata.mint == genesis_mint.key(), constraint = user_genesis_ata.owner == user.key())]
+    pub user_genesis_ata: Box<Account<'info, TokenAccount>>,
 }
 
 
@@ -707,7 +743,7 @@ pub struct MintSbt<'info> {
     #[account(
         init_if_needed, 
         payer = user, 
-        space = 8 + 32 + 4 + 100 + 1 + 1 + 1 + 4 + 8 + 8 + 8 + 4 + 8 + 1, 
+        space = 8 + 32 + 4 + 200 + 4 + 64 + 4 + 64 + 1 + 1 + 1 + 4 + 8 + 8 + 8 + 4 + 8 + 1, 
         seeds = [user.key().as_ref(), b"user-sbt", _exercise_id.as_bytes()], 
         bump
     )]
