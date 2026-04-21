@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-sanitas_seeker = "2ciBmyoCyT1f6Tu33V48kqxhu3f13qx7vXUA5se6Ydth"
+sanitas_seeker = "9wGLyUuNQFMEFEpoW8nRtA2pHmsKTpg4DyiaNXg7WpND"
 
 [provider]
 cluster = "devnet"

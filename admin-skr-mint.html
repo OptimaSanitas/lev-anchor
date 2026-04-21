@@ -52,6 +52,32 @@
 
 <button onclick="createDevnetGenesisMint()" class="orangeButton">🚀 Create Devnet Genesis Mint (Token-2022) → Phone Wallet</button>
 
+
+<!-- ===================================================== -->
+<!-- PROGRAM UPGRADE (3-of-5 PDA Gate + Timelock) -->
+<!-- ===================================================== -->
+<h3 style="color:#00FF9D; margin-top:40px;">🔐 Program Upgrade (3-of-5 Gate)</h3>
+
+<div style="background:#1E1E1E; padding:20px; border-radius:12px; margin-bottom:20px;">
+  <p><strong>Current Program ID:</strong> <span id="current-program-id">AqShSeYX4KpLtmmso1xVPh5QdcMAbXUP9dFAgpn1ubnr</span></p>
+  <p><strong>Upgrade Gate PDA:</strong> <span id="upgrade-gate-pda">Loading...</span></p>
+
+  <button onclick="initUpgradeGate()" class="tealButton">1. Initialize Upgrade Gate</button>
+  <button onclick="approveUpgrade(0)" class="orangeButton">Approve as Signer 0</button>
+  <button onclick="approveUpgrade(1)" class="orangeButton">Approve as Signer 1</button>
+  <button onclick="approveUpgrade(2)" class="orangeButton">Approve as Signer 2</button>
+  <button onclick="setTimelock(86400)" class="tealButton">Set 24h Timelock</button>
+  <button onclick="pauseUpgrades(true)" class="redButton">Pause Upgrades</button>
+  <button onclick="pauseUpgrades(false)" class="orangeButton">Unpause Upgrades</button>
+
+  <div style="margin-top:15px;">
+    <label>Buffer Address</label>
+    <input id="upgrade-buffer" placeholder="Buffer address for upgrade" style="width:100%; background:#111; color:#0F0; padding:12px; border-radius:8px; border:2px solid #00FF9D;">
+    
+    <button onclick="executeUpgrade()" style="background:#FF9800; margin-top:10px;">🚀 Execute Upgrade (when 3+ approvals)</button>
+  </div>
+</div>
+
   <script>
     let provider = null;
     let connection;
@@ -316,6 +342,41 @@
 
     window.debugMintConfigAuthority = async function() { alert("Run your original debug logic here"); };
     window.viewMintConfigOnSolscan = function() { window.open(`https://solscan.io/account/${PROGRAM_ID}?cluster=devnet`, "_blank"); };
+  
+  // === UPGRADE GATE FUNCTIONS ===
+window.initUpgradeGate = async function() {
+  if (!provider) return alert("Connect wallet first");
+  // Add your instruction call here (use your existing pattern)
+  alert("Call init_upgrade_gate instruction");
+};
+
+window.approveUpgrade = async function(signerIndex) {
+  if (!provider) return alert("Connect wallet first");
+  alert(`Calling approve_upgrade(${signerIndex})`);
+};
+
+window.setTimelock = async function(duration) {
+  if (!provider) return alert("Connect wallet first");
+  alert(`Calling set_timelock(${duration})`);
+};
+
+window.pauseUpgrades = async function(pause) {
+  if (!provider) return alert("Connect wallet first");
+  alert(`Calling pause_upgrades(${pause})`);
+};
+
+window.executeUpgrade = async function() {
+  const buffer = document.getElementById("upgrade-buffer").value.trim();
+  if (!buffer) return alert("Enter buffer address");
+  alert("Calling execute_upgrade with buffer: " + buffer);
+};
+  
+  
   </script>
+
+
+
+
+
 </body>
 </html>
