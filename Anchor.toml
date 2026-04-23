@@ -6,14 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-sanitas_seeker = "9wGLyUuNQFMEFEpoW8nRtA2pHmsKTpg4DyiaNXg7WpND"
+sanitas_seeker = "AcGZDDy58JxiXkbZDcxweBuDPQyi42P1uYrozeeM7Jm4"
 
 [provider]
 cluster = "devnet"
 wallet = "~/.config/solana/devnet-keypair.json"
-
-[upgrade_authority]
-devnet = "2PHVFvQ6m9GLRaLiVW5FkG689C1rrUGfeEgNxSd7meoW"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

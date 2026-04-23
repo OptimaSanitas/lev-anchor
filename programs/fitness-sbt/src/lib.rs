@@ -25,7 +25,7 @@ fn get_day(timestamp: i64) -> u32 {
 
 pub const GENESIS_MINT: Pubkey = pubkey!("GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te");
 
-declare_id!("9wGLyUuNQFMEFEpoW8nRtA2pHmsKTpg4DyiaNXg7WpND");
+declare_id!("AcGZDDy58JxiXkbZDcxweBuDPQyi42P1uYrozeeM7Jm4");
 
 pub const UPGRADE_SIGNERS: [Pubkey; 5] = [
     pubkey!("5fkgfLSGCxJTWcqQHfzigQUnxA1NAaCmmCjQbXmTvVzc"),
@@ -34,6 +34,9 @@ pub const UPGRADE_SIGNERS: [Pubkey; 5] = [
     pubkey!("BpDZ6jrcPYo1GoM4DWk857ys4R7MgyZb4FmHjkC9beuH"),
     pubkey!("CQsV3Wj6pdcgEkk5hkS6bd31Q2xp9fCuAqvV9WoLjqAR"),
 ];
+
+
+const BPF_UPGRADE_INSTRUCTION_DATA: [u8; 1] = [3];  // BPF Loader upgrade instruction
 
 #[error_code]
 pub enum ErrorCode {
@@ -294,8 +297,12 @@ pub mod sanitas_seeker {
         Ok(1000u32.saturating_sub(config.minted_legends))
     }
 
-    // ==================== UPGRADE GATE (HARDENED) ====================
     pub fn init_upgrade_gate(ctx: Context<InitUpgradeGate>) -> Result<()> {
+        // === TEMPORARILY DISABLED ===
+        msg!("❌ init_upgrade_gate is currently DISABLED for debugging");
+        return err!(ErrorCode::Unauthorized);
+        
+        // Original code below (do not delete)
         let gate = &mut ctx.accounts.upgrade_gate;
         gate.approvals = 0;
         gate.last_reset = Clock::get()?.unix_timestamp;
@@ -306,6 +313,7 @@ pub mod sanitas_seeker {
         msg!("✅ Upgrade gate initialized — PDA is upgrade authority");
         Ok(())
     }
+
 
     pub fn approve_upgrade(ctx: Context<ApproveUpgrade>, signer_index: u8) -> Result<()> {
         require!(signer_index < 5, ErrorCode::Unauthorized);
@@ -336,7 +344,7 @@ pub mod sanitas_seeker {
         gate.approvals = 0;
         gate.queued_at = 0;
         if new_duration == 0 {
-            msg!("✅ Timelock DISABLED (devnet mode)");
+            msg!("✅ Timelock DISABLED s (devnet mode)");
         } else {
             msg!("✅ Timelock set to {} hours", new_duration / 3600);
         }
@@ -353,59 +361,72 @@ pub mod sanitas_seeker {
         Ok(())
     }
 
-   pub fn execute_upgrade(
-        ctx: Context<ExecuteUpgrade>,
-        _buffer: Pubkey,
-        _target_program: Pubkey,
-    ) -> Result<()> {
-        let gate = &mut ctx.accounts.upgrade_gate;
-        require!(gate.approvals.count_ones() >= 3, ErrorCode::Unauthorized);
-        require!(!gate.paused, ErrorCode::UpgradesPaused);
+ pub fn execute_upgrade(
+    ctx: Context<ExecuteUpgrade>,
+    _buffer: Pubkey,
+    _target_program: Pubkey,
+) -> Result<()> {
+    let caller = ctx.accounts.authority.key();
+    
+    require!(ctx.accounts.upgrade_gate.approvals.count_ones() >= 3, ErrorCode::Unauthorized);
+    require!(!ctx.accounts.upgrade_gate.paused, ErrorCode::UpgradesPaused);
 
-        if gate.timelock_duration > 0 {
-            let now = Clock::get()?.unix_timestamp;
-            require!(now >= gate.queued_at + gate.timelock_duration, ErrorCode::TimelockNotPassed);
-        }
-
-        let caller = ctx.accounts.authority.key();
-        let is_one_of_five = UPGRADE_SIGNERS.iter().any(|&pk| pk == caller);
-        require!(is_one_of_five, ErrorCode::Unauthorized);
-
-        // Extract everything we need BEFORE the mutable borrow is a problem
-        let gate_key = gate.key();
-        let gate_bump = gate.bump;
-        let gate_info = gate.to_account_info();
-
-        let upgrade_ix = Instruction {
-            program_id: bpf_loader_upgradeable::ID,
-            accounts: vec![
-                AccountMeta::new(ctx.accounts.buffer.key(), false),
-                AccountMeta::new(ctx.accounts.target_program.key(), false),
-                AccountMeta::new_readonly(gate_key, true),
-                AccountMeta::new_readonly(system_program::ID, false),
-            ],
-            data: vec![3],
-        };
-
-        let seeds: &[&[u8]] = &[b"upgrade-gate", &[gate_bump]];
-
-        invoke_signed(
-            &upgrade_ix,
-            &[
-                ctx.accounts.buffer.to_account_info(),
-                ctx.accounts.target_program.to_account_info(),
-                gate_info,                           // ← Use extracted info
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            &[seeds],
-        )?;
-
-        gate.approvals = 0;
-        gate.queued_at = 0;
-        msg!("🎉 UPGRADE EXECUTED by PDA — approvals reset");
-        Ok(())
+    if ctx.accounts.upgrade_gate.timelock_duration > 0 {
+        let now = Clock::get()?.unix_timestamp;
+        require!(now >= ctx.accounts.upgrade_gate.queued_at + ctx.accounts.upgrade_gate.timelock_duration, ErrorCode::TimelockNotPassed);
     }
 
+    let is_one_of_five = UPGRADE_SIGNERS.iter().any(|&pk| pk == caller);
+    require!(is_one_of_five, ErrorCode::Unauthorized);
+
+    // Derive bump FIRST (before mutable borrow)
+    let (gate_key, gate_bump) = {
+        let gate = &ctx.accounts.upgrade_gate;
+        (gate.key(), gate.bump)
+    };
+
+    // Now create mutable borrow
+    let gate = &mut ctx.accounts.upgrade_gate;
+    let gate_info = gate.to_account_info();
+
+    let upgrade_ix = Instruction {
+        program_id: bpf_loader_upgradeable::ID,
+        accounts: vec![
+            AccountMeta::new(ctx.accounts.buffer.key(), false),
+            AccountMeta::new(ctx.accounts.program_data.key(), false),
+            AccountMeta::new(ctx.accounts.target_program.key(), false),
+            AccountMeta::new_readonly(gate_key, true),
+            AccountMeta::new_readonly(system_program::ID, false),
+        ],
+        data: BPF_UPGRADE_INSTRUCTION_DATA.to_vec(),
+    };
+
+    invoke_signed(
+        &upgrade_ix,
+        &[
+            ctx.accounts.buffer.to_account_info(),
+            ctx.accounts.program_data.to_account_info(),
+            ctx.accounts.target_program.to_account_info(),
+            gate_info,
+            ctx.accounts.system_program.to_account_info(),
+        ],
+        &[&[b"upgrade-gate", &[gate_bump]]],
+    )?;
+
+    emit!(UpgradeExecuted {
+        buffer: _buffer,
+        slot: Clock::get()?.slot,
+        authority: caller,
+    });
+
+    gate.approvals = 0;
+    gate.queued_at = 0;
+
+    msg!("🎉 UPGRADE EXECUTED by the PDA #1");
+    msg!("Buffer used: {}", _buffer);
+
+    Ok(())
+}
 
 
     // ==================== WITHDRAW (NOW BEHIND 3-OF-5 GATE) ====================
@@ -429,6 +450,13 @@ pub mod sanitas_seeker {
 pub struct UpgradeQueued {
     pub queued_at: i64,
     pub timelock_duration: i64,
+}
+
+#[event]
+pub struct UpgradeExecuted {
+    pub buffer: Pubkey,
+    pub slot: u64,
+    pub authority: Pubkey,
 }
 
 // ==================== DATA STRUCTURES ====================
@@ -751,13 +779,24 @@ pub struct PauseUpgrades<'info> {
 pub struct ExecuteUpgrade<'info> {
     #[account(mut, seeds = [b"upgrade-gate"], bump = upgrade_gate.bump)]
     pub upgrade_gate: Account<'info, UpgradeGate>,
-    #[account(mut)]
+    
     pub authority: Signer<'info>,
-    /// CHECK: Buffer account for program upgrade. Validated by the BPF Loader.
-    ///        No additional type checks needed.
+    
+    /// CHECK: Buffer account for program upgrade
+    #[account(mut)]
     pub buffer: UncheckedAccount<'info>,
-    /// CHECK: Target program being upgraded. Validated by the BPF Loader.
-    ///        No additional type checks needed.
-    pub target_program: UncheckedAccount<'info>,
+    
+    /// CHECK: Target program being upgraded  
+    pub target_program: UncheckedAccount<'info>,     // ← REMOVED #[account(mut)]
+    
+    /// CHECK: ProgramData PDA for the target program.
+    #[account(
+        mut,
+        seeds = [target_program.key().as_ref()],
+        bump,
+        seeds::program = bpf_loader_upgradeable::ID
+    )]
+    pub program_data: UncheckedAccount<'info>,
+    
     pub system_program: Program<'info, System>,
 }
