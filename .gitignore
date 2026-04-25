@@ -5,3 +5,13 @@ target
 node_modules
 test-ledger
 .yarn
+
+# Local scratch artifacts (keep canonical docs/tools in repo root)
+scratch/**
+*.local.html
+*.notes.md
+
+# Operator-only runbooks (public repo — keep local copies; not published on GitHub)
+MAINNET_UPGRADE_PROCESS.md
+PRE-FLIGHT_CHECKLIST.md
+scripts/preflight-upgrade.sh
