@@ -2,6 +2,8 @@
 
 **Live Exercise Verification (LEV)** — Soulbound Fitness Token program on Solana.
 
+**Repo:** this directory is the **public** Anchor workspace (remote is commonly `OptimaSanitas/lev-anchor`). The **React Native client** is the sibling **`../App/`** tree (**private** `lev-app`). Operator-only files `MAINNET_UPGRADE_PROCESS.md`, `PRE-FLIGHT_CHECKLIST.md`, and `scripts/preflight-upgrade.sh` are **gitignored** here; keep local copies for your own upgrades.
+
 ## Overview
 
 This Anchor program powers the LEV mobile app. It issues non-transferable Soulbound Tokens (SBTs) to users who complete verified walk-run exercise sessions using GPS speed detection on the Solana Seeker phone.
