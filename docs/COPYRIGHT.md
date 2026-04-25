@@ -23,14 +23,14 @@ No part of this application, its on-chain programs, documentation, or associated
 This document confirms full ownership and legal compliance for:
 
 - The React Native mobile application (iOS & Android builds for Solana Seeker)
-- The Solana Anchor smart contract (`sanitas_seeker` program ID: `HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18`)
+- The Solana Anchor smart contract (`sanitas_seeker` program ID: `AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN`)
 - All Soulbound Tokens (SBTs), SKR tokens, Genesis NFTs, and reward mechanisms
 - User data handling, GPS tracking, accelerometer fusion, and on-chain logging features
 
 ## Third-Party Components
 
 - Solana Web3.js, Mobile Wallet Adapter, React Native, and other open-source libraries are used under their respective licenses (MIT, Apache 2.0, etc.).
-- X (Twitter) API integration for daily longevity threads is used in accordance with X's developer terms.
+- The in-app **Daily issue** uses first-party copy and direct MP4 URLs (e.g. Arweave or CDN). Optional “Further reading” links open in the system browser, not in an in-app webview.
 - Video playback uses react-native-video under its license.
 
 ## Warranty Disclaimer

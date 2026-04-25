@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SanitasSeeker — Admin (Final with Upgrade Gate)</title>
+  <style>
+    body {font-family: system-ui; background:#0A0A0A; color:#00FF9D; padding:30px; max-width:920px; margin:0 auto;}
+    h1 {color:#00FF9D;}
+    button {background:#00C853; color:#000; border:none; padding:16px 28px; font-size:18px; font-weight:700; border-radius:12px; cursor:pointer; margin:8px 0; width:100%;}
+    .redButton {background:#FF3D00 !important;}
+    .tealButton {background:#00B8D4 !important;}
+    .orangeButton {background:#FF9800 !important;}
+    .status {font-size:16px; padding:12px; border-radius:12px; background:#1E1E1E; margin:12px 0;}
+    input {width:100%; background:#111; color:#0F0; padding:14px; border-radius:12px; border:2px solid #00FF9D; margin-bottom:12px; font-size:16;}
+    .wallet-info {background:#111; padding:12px; border-radius:8px; margin:10px 0; font-family:monospace;}
+  </style>
+  <script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+</head>
+<body>
+  <h1>🔑 SanitasSeeker Admin Panel (Final)</h1>
+  <p><strong>Program ID:</strong> <span id="current-program-id">73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ</span></p>
+
+  <!-- Dynamic Program ID Input -->
+  <div style="background:#1E1E1E; padding:15px; border-radius:12px; margin:15px 0;">
+    <label><strong>Program ID (editable for multiple projects):</strong></label>
+    <div style="display:flex; gap:10px; margin-top:8px;">
+     <input id="program-id-input" type="text" placeholder="Enter Program ID here..." 
+       style="flex:1; background:#111; color:#0F0; padding:12px; border-radius:8px; border:2px solid #00FF9D;">
+    <button onclick="updateProgramId()" class="tealButton" style="width:auto; padding:12px 24px;">Set Program</button>
+    </div>
+  </div>
+
+  <button onclick="connectWallet()">🔗 CONNECT WALLET</button>
+  <div id="status" class="status">READY</div>
+
+  <div class="wallet-info">
+    <strong>Your Connected Wallet:</strong><br>
+    <span id="connected-wallet">Not connected</span><br><br>
+    <strong>This wallet is:</strong> <span id="wallet-signer">Click "Check My Wallet" after connecting</span>
+  </div>
+  <button onclick="checkMyWallet()" class="tealButton">🔍 Check My Wallet</button>
+
+  <h3 style="color:#00FF9D; margin-top:30px;">🔐 Program Upgrade (3-of-5 Gate)</h3>
+  <div style="background:#1E1E1E; padding:20px; border-radius:12px;">
+    <p><strong>Upgrade Gate PDA:</strong> <span id="upgrade-gate-pda">Enter Program ID above</span></p>
+
+    <button onclick="initUpgradeGate()" class="tealButton">1. Initialize Upgrade Gate</button>
+    <button onclick="approveUpgrade(0)" class="orangeButton">Approve (Signer 0)</button>
+    <button onclick="approveUpgrade(1)" class="orangeButton">Approve (Signer 1)</button>
+    <button onclick="approveUpgrade(2)" class="orangeButton">Approve (Signer 2)</button>
+    <button onclick="approveUpgrade(3)" class="orangeButton">Approve (Signer 3)</button>
+    <button onclick="approveUpgrade(4)" class="orangeButton">Approve (Signer 4)</button>
+
+    <button onclick="setTimelock(86400)" class="tealButton">Set 24h Timelock</button>
+    <button onclick="pauseUpgrades(true)" style="background:#FF3D00;">Pause Upgrades</button>
+    <button onclick="pauseUpgrades(false)" class="orangeButton">Unpause Upgrades</button>
+    <button onclick="checkGateStatus()" class="tealButton">🔍 Check Gate Status</button>
+
+    <div id="gate-status" style="margin-top:15px; padding:12px; background:#111; border-radius:8px; font-family:monospace; font-size:14px;"></div>
+
+    <div id="execute-status" style="margin:12px 0; padding:10px; border-radius:8px; background:#111; font-size:15px; text-align:center;"></div>
+
+    <div style="margin-top:15px;">
+      <label>Buffer Address</label>
+      <p style="font-size:14px; color:#aaa; margin:6px 0 10px 0; line-height:1.45;">
+        <strong>Required.</strong> The buffer is a temporary on-chain account that holds the <em>new</em> program .so before upgrade.
+        Create it from your machine (devnet), then paste its pubkey here. Example:
+        <code style="color:#8ff;">solana program write-buffer target/deploy/sanitas_seeker.so --url devnet</code>
+        (note the printed Buffer). Buffer authority must be your <strong>gate PDA</strong>; if not:
+        <code style="color:#8ff;">solana program set-buffer-authority &lt;BUFFER&gt; --new-buffer-authority &lt;GATE_PDA&gt; --url devnet</code>
+        <strong>Note:</strong> After a successful upgrade the buffer is emptied (or closed); the loader then returns <em>invalid account data</em> if you reuse it. Run <code style="color:#8ff;">write-buffer</code> again for every new upgrade.
+      </p>
+      <input id="upgrade-buffer" placeholder="Pubkey from write-buffer (not the .so path)">
+      <label>Target Program ID (program to upgrade)</label>
+      <input id="target-program-id" placeholder="Program ID to upgrade (can differ from gate program)">
+      <button onclick="executeUpgrade()" style="background:#FF9800; margin-top:10px;">🚀 Execute Upgrade</button>
+      <button onclick="verifyUpgrade()" class="tealButton" style="margin-top:10px;">✅ Verify deployment</button>
+      <div id="verify-upgrade-result" style="margin-top:12px; padding:14px; border-radius:8px; background:#111; font-family:monospace; font-size:14px; line-height:1.55; white-space:pre-wrap;"></div>
+    </div>
+  </div>
+
+  <script>
+    let provider = null;
+    let connection = new solanaWeb3.Connection("https://devnet.helius-rpc.com/?api-key=bcb31616-628f-4afc-ab24-82980bb8ea55", "confirmed");
+    
+    // === DYNAMIC PROGRAM ID ===
+    // Governor program (3-of-5 + execute_upgrade). Must differ from the app program below.
+    const DEFAULT_PROGRAM_ID = "73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ";
+    const DEFAULT_TARGET_PROGRAM_ID = "AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN";
+    /** Latest devnet buffer from `write-buffer` + `set-buffer-authority` to gate PDA; replace when you upload a new build. */
+    const DEFAULT_UPGRADE_BUFFER = "HJYEU11BEgiMq11BjEh5jKMuyphJ2d51Wr1QxmZ3cgSf";
+    let PROGRAM_ID = new solanaWeb3.PublicKey(DEFAULT_PROGRAM_ID);
+
+
+    const UPGRADE_SIGNERS = [
+      "5fkgfLSGCxJTWcqQHfzigQUnxA1NAaCmmCjQbXmTvVzc",
+      "CwyNHESJ95mccZkGPEEApQdeB4XEV5mSL1SRkn6Ee8qG",
+      "8TeEjQkh2CQTbKo57r3n5GrYGYUzvrmbj1eRJgbjZsjp",
+      "BpDZ6jrcPYo1GoM4DWk857ys4R7MgyZb4FmHjkC9beuH",
+      "CQsV3Wj6pdcgEkk5hkS6bd31Q2xp9fCuAqvV9WoLjqAR"
+    ];
+
+    const DISCRIMINATORS = {
+      init: [119, 221, 101, 155, 1, 15, 39, 105],
+      approve: [218, 6, 0, 77, 31, 202, 206, 123],
+      setTimelock: [131, 159, 222, 21, 225, 226, 54, 214],
+      pause: [142, 47, 86, 106, 135, 47, 208, 173],
+      execute: [205, 219, 100, 218, 66, 39, 215, 24]
+    };
+
+    // === DYNAMIC GATE PDA ===
+    async function updateGatePDA() {
+      if (!PROGRAM_ID) {
+        document.getElementById("upgrade-gate-pda").innerText = "Enter Program ID above";
+        return;
+      }
+      
+      const [gatePda] = await solanaWeb3.PublicKey.findProgramAddress(
+        [new TextEncoder().encode("upgrade-gate")],
+        PROGRAM_ID
+      );
+      document.getElementById("upgrade-gate-pda").innerText = gatePda.toBase58();
+    }
+
+  async function updateProgramId() {
+    const input = document.getElementById("program-id-input").value.trim();
+    
+    if (!input) {
+      alert("Please enter a Program ID");
+      return;
+    }
+    
+    try {
+      PROGRAM_ID = new solanaWeb3.PublicKey(input);
+      document.getElementById("current-program-id").innerText = input;
+      
+      // Calculate gate PDA
+      const [gatePda] = await solanaWeb3.PublicKey.findProgramAddress(
+        [new TextEncoder().encode("upgrade-gate")],
+        PROGRAM_ID
+      );
+      document.getElementById("upgrade-gate-pda").innerText = gatePda.toBase58();
+      
+      alert("✅ Program ID set! Gate PDA calculated.");
+    } catch (e) {
+      alert("❌ Invalid Program ID: " + e.message);
+      document.getElementById("upgrade-gate-pda").innerText = "Invalid Program ID";
+    }
+  }
+
+
+    async function connectWallet() {
+      if (!window.solana) return alert("No wallet detected");
+      provider = window.solana;
+      await provider.connect();
+      document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">✅ CONNECTED</strong>`;
+      await checkMyWallet();
+    }
+
+    window.checkMyWallet = async function() {
+      if (!provider) return alert("Connect wallet first");
+      const wallet = provider.publicKey.toString();
+      document.getElementById("connected-wallet").innerText = wallet;
+      const index = UPGRADE_SIGNERS.findIndex(s => s === wallet);
+      if (index !== -1) {
+        document.getElementById("wallet-signer").innerHTML = `<strong style="color:#00FF9D">Signer ${index} ✅</strong>`;
+      } else {
+        document.getElementById("wallet-signer").innerHTML = `<strong style="color:#FF3D00">NOT A SIGNER ❌</strong>`;
+      }
+    };
+
+    function requireProgramId() {
+      if (!PROGRAM_ID) {
+        alert("Set Program ID first.");
+        return false;
+      }
+      return true;
+    }
+
+    async function getUpgradeGatePDA() {
+      if (!requireProgramId()) throw new Error("PROGRAM_ID_NOT_SET");
+      const [pda] = await solanaWeb3.PublicKey.findProgramAddress(
+        [new TextEncoder().encode("upgrade-gate")],
+        PROGRAM_ID
+      );
+      return pda;
+    }
+
+    window.checkGateStatus = async function() {
+      if (!requireProgramId()) return;
+      const gatePda = await getUpgradeGatePDA();
+      const accountInfo = await connection.getAccountInfo(gatePda);
+
+      if (!accountInfo) {
+        document.getElementById("gate-status").innerHTML = `<strong style="color:#FF3D00">❌ Gate NOT initialized</strong><br>Click "1. Initialize Upgrade Gate" first`;
+        document.getElementById("execute-status").innerHTML = "";
+        return;
+      }
+
+      const data = accountInfo.data;
+      // Anchor layout: 8 disc | u8 approvals | i64 last_reset | u8 bump | i64 timelock_duration | i64 queued_at | u8 paused
+      const approvals = data[8];
+      const approvalCount = approvals.toString(2).split('1').length - 1;
+      const timelock = Number(data.readBigInt64LE(18));
+      const queuedAt = Number(data.readBigInt64LE(26));
+      const paused = data[34] !== 0;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const timelockEnds = queuedAt + timelock;
+      const timelockRemaining = timelock > 0 ? Math.max(0, timelockEnds - nowSec) : 0;
+
+      let html = `<strong>Gate Status:</strong> ✅ Initialized<br>`;
+      html += `<strong>Approvals:</strong> ${approvalCount} / 5<br>`;
+      html += `<strong>Paused:</strong> ${paused ? "YES ⛔" : "NO ✅"}<br>`;
+      if (timelock > 0) {
+        html += `<strong>Timelock:</strong> ${timelock} sec (unlock in ~${timelockRemaining} sec from now)<br>`;
+      } else {
+        html += `<strong>Timelock:</strong> Disabled<br>`;
+      }
+      html += `<strong>Signers approved:</strong><br>`;
+      for (let i = 0; i < 5; i++) {
+        html += `  Signer ${i}: ${(approvals & (1 << i)) ? "✅" : "⬜"}<br>`;
+      }
+      document.getElementById("gate-status").innerHTML = html;
+
+      const statusEl = document.getElementById("execute-status");
+      const timelockOk = timelock === 0 || nowSec >= timelockEnds;
+      if (approvalCount >= 3 && !paused && timelockOk) {
+        statusEl.innerHTML = `<strong style="color:#00FF9D">✅ Ready to Execute (3+ approvals, timelock clear)</strong>`;
+      } else if (paused) {
+        statusEl.innerHTML = `<strong style="color:#FF3D00">⛔ Upgrades are paused</strong>`;
+      } else if (approvalCount >= 3 && timelock > 0 && !timelockOk) {
+        statusEl.innerHTML = `<strong style="color:#FF9800">⏳ Timelock: wait ~${timelockRemaining}s before Execute Upgrade</strong>`;
+      } else {
+        const needed = 3 - approvalCount;
+        statusEl.innerHTML = `<strong style="color:#FF9800">⚠️ Need ${needed} more approval${needed > 1 ? 's' : ''}</strong>`;
+      }
+    };
+
+    window.initUpgradeGate = async function() {
+      if (!provider) return alert("Connect wallet first");
+      if (!requireProgramId()) return;
+      const gatePda = await getUpgradeGatePDA();
+      const ix = new solanaWeb3.TransactionInstruction({
+        keys: [{ pubkey: gatePda, isSigner: false, isWritable: true }, { pubkey: provider.publicKey, isSigner: true, isWritable: true }, { pubkey: solanaWeb3.SystemProgram.programId, isSigner: false, isWritable: false }],
+        programId: PROGRAM_ID,
+        data: new Uint8Array(DISCRIMINATORS.init)
+      });
+      const tx = new solanaWeb3.Transaction().add(ix);
+      const { blockhash } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = provider.publicKey;
+      const signed = await provider.signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize());
+      alert("✅ Gate initialized! Tx: " + sig.slice(0,12) + "...");
+      await checkGateStatus();
+    };
+
+    window.approveUpgrade = async function(idx) {
+      if (!provider) return alert("Connect wallet first");
+      if (!requireProgramId()) return;
+      const gatePda = await getUpgradeGatePDA();
+      const data = new Uint8Array([...DISCRIMINATORS.approve, idx]);
+      const ix = new solanaWeb3.TransactionInstruction({
+        keys: [{ pubkey: gatePda, isSigner: false, isWritable: true }, { pubkey: provider.publicKey, isSigner: true, isWritable: false }],
+        programId: PROGRAM_ID,
+        data
+      });
+      const tx = new solanaWeb3.Transaction().add(ix);
+      const { blockhash } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = provider.publicKey;
+      const signed = await provider.signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize());
+      alert(`✅ Approved as signer ${idx}! Tx: ` + sig.slice(0,12) + "...");
+      await checkGateStatus();
+    };
+
+    window.setTimelock = async function(duration) {
+      if (!provider) return alert("Connect wallet first");
+      if (!requireProgramId()) return;
+      const gatePda = await getUpgradeGatePDA();
+      const data = new Uint8Array(9);
+      data.set(DISCRIMINATORS.setTimelock);
+      new DataView(data.buffer).setBigInt64(8, BigInt(duration), true);
+      const ix = new solanaWeb3.TransactionInstruction({
+        keys: [{ pubkey: gatePda, isSigner: false, isWritable: true }, { pubkey: provider.publicKey, isSigner: true, isWritable: false }],
+        programId: PROGRAM_ID,
+        data
+      });
+      const tx = new solanaWeb3.Transaction().add(ix);
+      const { blockhash } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = provider.publicKey;
+      const signed = await provider.signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize());
+      alert("✅ Timelock set! Tx: " + sig.slice(0,12) + "...");
+    };
+
+    window.pauseUpgrades = async function(pause) {
+      if (!provider) return alert("Connect wallet first");
+      if (!requireProgramId()) return;
+      const gatePda = await getUpgradeGatePDA();
+      const data = new Uint8Array([...DISCRIMINATORS.pause, pause ? 1 : 0]);
+      const ix = new solanaWeb3.TransactionInstruction({
+        keys: [{ pubkey: gatePda, isSigner: false, isWritable: true }, { pubkey: provider.publicKey, isSigner: true, isWritable: false }],
+        programId: PROGRAM_ID,
+        data
+      });
+      const tx = new solanaWeb3.Transaction().add(ix);
+      const { blockhash } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = provider.publicKey;
+      const signed = await provider.signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize());
+      alert(`✅ Upgrades ${pause ? "PAUSED" : "UNPAUSED"}! Tx: ` + sig.slice(0,12) + "...");
+    };
+
+  /** Pull Anchor custom code from simulate/send err (best-effort). */
+  function anchorCustomCodeFromErr(err) {
+    try {
+      const s = JSON.stringify(err);
+      const m = s.match(/"Custom":\s*(\d+)/);
+      if (m) return Number(m[1]);
+    } catch (_) {}
+    return null;
+  }
+
+  function hintForExecuteUpgradeSim(err, logs) {
+    const code = anchorCustomCodeFromErr(err);
+    const logStr = (logs || []).join("\n");
+    if (code === 6000 || logStr.includes("6000") || logStr.includes("0x1770") || logStr.includes("Unauthorized")) {
+      return (
+        "\n\n— Why 6000 Unauthorized? —\n" +
+        "• The gate needs **3 distinct signer approvals** before Execute Upgrade. After a **successful** upgrade, the program **clears approvals** — you must approve again (3 keys or 3 txs).\n" +
+        "• Your connected wallet must be one of the **five** `UPGRADE_SIGNERS` pubkeys.\n" +
+        "• Buffer and Target in the form must match the instruction (rare mismatch).\n" +
+        'Click **"Check Gate Status"** to see approval count.'
+      );
+    }
+    return "";
+  }
+
+ window.executeUpgrade = async function() {
+  if (!provider) return alert("Connect wallet first");
+  if (!requireProgramId()) return;
+
+  const gatePda = await getUpgradeGatePDA();
+  const bufferStr = document.getElementById("upgrade-buffer").value.trim();
+  const targetProgramStr = document.getElementById("target-program-id").value.trim();
+  if (!bufferStr) return alert("Enter buffer address");
+  if (!targetProgramStr) return alert("Enter target program ID");
+
+  const buffer = new solanaWeb3.PublicKey(bufferStr);
+  const targetProgram = new solanaWeb3.PublicKey(targetProgramStr);
+
+  const BPF_LOADER = new solanaWeb3.PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+  const [programDataPDA] = solanaWeb3.PublicKey.findProgramAddressSync(
+    [targetProgram.toBuffer()],
+    BPF_LOADER
+  );
+
+  // === PRINT ACCOUNT ORDER ===
+  console.log("=== ACCOUNT ORDER BEING SENT ===");
+  console.log("1. upgrade_gate:    ", gatePda.toBase58());
+  console.log("2. authority:       ", provider.publicKey.toBase58());
+  console.log("3. buffer:          ", buffer.toBase58());
+  console.log("4. target_program:  ", targetProgram.toBase58());
+  console.log("5. program_data:    ", programDataPDA.toBase58());
+  console.log("6. spill:           ", provider.publicKey.toBase58());
+  console.log("7. rent:            ", solanaWeb3.SYSVAR_RENT_PUBKEY.toBase58());
+  console.log("8. clock:           ", solanaWeb3.SYSVAR_CLOCK_PUBKEY.toBase58());
+  console.log("9. bpf_loader:      ", BPF_LOADER.toBase58());
+
+  const discriminator = new Uint8Array([205, 219, 100, 218, 66, 39, 215, 24]);
+  const data = new Uint8Array(72);
+  data.set(discriminator, 0);
+  data.set(buffer.toBytes(), 8);
+  data.set(targetProgram.toBytes(), 40);
+
+  const ix = new solanaWeb3.TransactionInstruction({
+    keys: [
+      { pubkey: gatePda, isSigner: false, isWritable: true },           // 1. upgrade_gate
+      { pubkey: provider.publicKey, isSigner: true, isWritable: true }, // 2. authority (writable if same key as spill)
+      { pubkey: buffer, isSigner: false, isWritable: true },            // 3. buffer
+      { pubkey: targetProgram, isSigner: false, isWritable: true },     // 4. target_program
+      { pubkey: programDataPDA, isSigner: false, isWritable: true },    // 5. program_data
+      { pubkey: provider.publicKey, isSigner: false, isWritable: true }, // 6. spill
+      { pubkey: solanaWeb3.SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false }, // 7. rent
+      { pubkey: solanaWeb3.SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false }, // 8. clock
+      { pubkey: BPF_LOADER, isSigner: false, isWritable: false }, // 9. bpf_loader (required in tx for CPI)
+    ],
+    programId: PROGRAM_ID,
+    data: data
+  });
+
+  const tx = new solanaWeb3.Transaction().add(ix);
+  tx.feePayer = provider.publicKey;
+
+  console.log("=== SENDING TRANSACTION ===");
+  console.log("Gate program ID:", PROGRAM_ID.toBase58());
+  console.log("Target program ID:", targetProgram.toBase58());
+  console.log("Number of accounts:", ix.keys.length);
+
+  try {
+    // Simulate **before** wallet sign. Post-sign simulate uses a mismatched message/signature
+    // (web3 refreshes blockhash internally) and can surface `AlreadyProcessed` if that signature
+    // already landed from a prior successful click.
+    {
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.lastValidBlockHeight = lastValidBlockHeight;
+      const sim = await connection.simulateTransaction(tx);
+      if (sim.value.err) {
+        console.error("Simulation failed:", sim.value.err, sim.value.logs);
+        const logTail = (sim.value.logs || []).slice(-20).join("\n");
+        const hint = hintForExecuteUpgradeSim(sim.value.err, sim.value.logs);
+        alert("Simulation failed (fix before sending):\n" + JSON.stringify(sim.value.err) + hint + (logTail ? "\n\n--- logs (tail) ---\n" + logTail : ""));
+        try { await checkGateStatus(); } catch (_) {}
+        return;
+      }
+    }
+
+    const { blockhash: bh2, lastValidBlockHeight: lvh2 } = await connection.getLatestBlockhash();
+    tx.recentBlockhash = bh2;
+    tx.lastValidBlockHeight = lvh2;
+
+    const signed = await provider.signTransaction(tx);
+    const signOpts = { requireAllSignatures: false, verifySignatures: false };
+    const raw = signed.serialize(signOpts);
+    const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+    console.log("✅ Transaction sent:", sig);
+    alert(`Transaction sent!\nhttps://solscan.io/tx/${sig}?cluster=devnet`);
+  } catch (error) {
+    console.error("❌ Error:", error);
+    alert("Error: " + error.message);
+  }
+};
+
+  window.verifyUpgrade = async function() {
+    const out = document.getElementById("verify-upgrade-result");
+    if (!out) return;
+    out.innerHTML = "Loading…";
+    try {
+      if (!requireProgramId()) {
+        out.innerHTML = "<span style='color:#FF3D00'>Set Program ID (governor) first.</span>";
+        return;
+      }
+      const tpStr = document.getElementById("target-program-id").value.trim();
+      if (!tpStr) {
+        out.innerHTML = "<span style='color:#FF3D00'>Enter Target Program ID.</span>";
+        return;
+      }
+      const bpf = new solanaWeb3.PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+      const targetProgram = new solanaWeb3.PublicKey(tpStr);
+      const [programDataPDA] = solanaWeb3.PublicKey.findProgramAddressSync([targetProgram.toBuffer()], bpf);
+      const gatePda = await getUpgradeGatePDA();
+
+      const progInfo = await connection.getAccountInfo(targetProgram);
+      let html = "";
+      if (!progInfo) {
+        out.innerHTML = "<strong style='color:#FF3D00'>No account at target address.</strong>";
+        return;
+      }
+
+      html += "<strong>Verify deployment</strong> (read-only RPC)\n\n";
+      html += "<strong>Target program</strong> " + targetProgram.toBase58() + "\n";
+      const ownOk = progInfo.owner.equals(bpf);
+      html += "Owner: " + progInfo.owner.toBase58() + (ownOk ? " ✅ BPF upgradeable loader" : " ⚠️ not loader") + "\n";
+      html += "Executable: " + (progInfo.executable ? "yes ✅" : "no ❌") + "\n";
+      html += "Program account data length: " + progInfo.data.length + " bytes (expect 36)\n";
+
+      if (progInfo.data.length >= 36) {
+        const disc = progInfo.data.readUInt32LE(0);
+        const embeddedPd = new solanaWeb3.PublicKey(progInfo.data.slice(4, 36));
+        html += "Program state disc (expect 2): " + disc + "\n";
+        html += "Embedded ProgramData: " + embeddedPd.toBase58();
+        html += embeddedPd.equals(programDataPDA) ? " ✅ matches PDA\n" : " ❌ PDA mismatch\n";
+      }
+
+      const pdInfo = await connection.getAccountInfo(programDataPDA);
+      html += "\n<strong>ProgramData</strong> " + programDataPDA.toBase58() + "\n";
+      if (!pdInfo) {
+        html += "<strong style='color:#FF3D00'>Missing — not a valid upgradeable program pair.</strong>\n";
+        out.innerHTML = html.replace(/\n/g, "<br>");
+        return;
+      }
+      html += "Data length: " + pdInfo.data.length + " bytes (metadata + ELF)\n";
+      if (pdInfo.data.length >= 45) {
+        const pdDisc = pdInfo.data.readUInt32LE(0);
+        const slot = pdInfo.data.readBigUInt64LE(4);
+        const hasAuth = pdInfo.data[12];
+        html += "ProgramData state disc (expect 3): " + pdDisc + "\n";
+        html += "Last upgrade/deploy slot (on-chain metadata): " + slot.toString() + "\n";
+        if (hasAuth) {
+          const authPk = new solanaWeb3.PublicKey(pdInfo.data.slice(13, 45));
+          html += "Upgrade authority: " + authPk.toBase58() + "\n";
+          html += "Matches gate PDA: " + (authPk.equals(gatePda) ? "yes ✅" : "no ⚠️") + "\n";
+        } else {
+          html += "Upgrade authority: none (immutable / revoked)\n";
+        }
+      }
+
+      const bufStr = document.getElementById("upgrade-buffer").value.trim();
+      if (bufStr) {
+        html += "\n<strong>Buffer</strong> " + bufStr + "\n";
+        try {
+          const bufPk = new solanaWeb3.PublicKey(bufStr);
+          const bufInfo = await connection.getAccountInfo(bufPk);
+          if (!bufInfo) {
+            html += "Not found — typical after a successful upgrade; use a new write-buffer next time.\n";
+          } else {
+            html += "Owner: " + bufInfo.owner.toBase58() + ", data len: " + bufInfo.data.length + "\n";
+            if (bufInfo.data.length >= 37) {
+              const bdisc = bufInfo.data.readUInt32LE(0);
+              const payload = bufInfo.data.length - 37;
+              html += "Buffer state disc (expect 1): " + bdisc + ", ELF bytes after metadata: " + payload;
+              html += payload > 0 ? " ✅\n" : " ⚠️ empty (cannot upgrade again with this buffer)\n";
+            }
+          }
+        } catch (e) {
+          html += "Invalid buffer pubkey.\n";
+        }
+      }
+
+      html += "\n<strong>Gate PDA</strong> (expected upgrade authority) " + gatePda.toBase58() + "\n";
+      html += "\n<small>CLI cross-check: <code style='color:#8ff'>solana program show " + targetProgram.toBase58() + " --url devnet</code></small>";
+      out.innerHTML = html.replace(/\n/g, "<br>");
+    } catch (e) {
+      out.innerHTML = "<span style='color:#FF3D00'>Error: " + e.message + "</span>";
+      console.error(e);
+    }
+  };
+
+
+    // Auto-update gate PDA on load
+    window.addEventListener('load', async () => {
+      document.getElementById("current-program-id").innerText = PROGRAM_ID.toBase58();
+      document.getElementById("program-id-input").value = PROGRAM_ID.toBase58();
+      document.getElementById("target-program-id").value = DEFAULT_TARGET_PROGRAM_ID;
+      const bufEl = document.getElementById("upgrade-buffer");
+      if (bufEl && !bufEl.value.trim()) bufEl.value = DEFAULT_UPGRADE_BUFFER;
+      await updateGatePDA();
+    });
+
+
+
+
+async function debugDiscriminators() {
+  const computeDisc = async (name) => {
+    const msg = new TextEncoder().encode(`global:${name}`);
+    const hash = await window.crypto.subtle.digest('SHA-256', msg);
+    const disc = Array.from(new Uint8Array(hash.slice(0,8)));
+    console.log(`${name}: [${disc.join(', ')}]`);
+    return new Uint8Array(hash.slice(0,8));
+  };
+  
+  await computeDisc('execute_upgrade');
+  await computeDisc('init_upgrade_gate');
+  await computeDisc('approve_upgrade');
+}
+debugDiscriminators();
+
+  </script>
+</body>
+</html>

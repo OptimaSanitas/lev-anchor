@@ -1,0 +1,15 @@
+[package]
+name = "upgrade_governor"
+version = "0.1.0"
+description = "3-of-5 upgrade authority governor (minimal)"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "upgrade_governor"
+
+[dependencies]
+anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
+
+[features]
+idl-build = ["anchor-lang/idl-build"]

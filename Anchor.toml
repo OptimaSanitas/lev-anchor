@@ -6,13 +6,24 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-sanitas_seeker = "AcGZDDy58JxiXkbZDcxweBuDPQyi42P1uYrozeeM7Jm4"
+sanitas_seeker = "AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN"
+upgrade_governor = "73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ"
 
 [provider]
-cluster = "devnet"
-wallet = "~/.config/solana/devnet-keypair.json"
+# Localnet so `anchor test` uses `solana-test-validator` + `[test.validator]` clones (e.g. SKR mint for `mint_sbt`).
+# Deploy / upgrade to devnet: `anchor deploy --provider.cluster devnet` (and same for `anchor upgrade`).
+cluster = "localnet"
+wallet = "~/Groking/projects/sanitas_payer.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+# Local `anchor test`: load devnet SKR mint snapshot so fixed `address = DCrf…` resolves without RPC clone timing.
+[test.validator]
+url = "https://api.devnet.solana.com"
+
+[[test.validator.account]]
+address = "DCrfzg5T8hijkX8EM6oN9sh4Ucm1AMqqNZQZBGTbmofQ"
+filename = "tests/fixtures/dcrf_skr_mint.json"
 
 [hooks]

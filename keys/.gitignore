@@ -1,0 +1,4 @@
+# Never commit program deploy secrets
+sanitas_seeker-keypair.json
+*.json
+!README.md

@@ -31,7 +31,7 @@ By using the App, you consent to the data practices described in this policy.
 - No cookies or cross-app tracking.
 
 ### 5. News & Social Data
-- Daily threads fetched from the on-chain PDA (`daily-news-seeker-final`) which mirrors content originally posted by @optima_sanitas on X (Twitter).
+- Daily issue content (workout video URLs, text, optional persona image, optional outbound links) resolved from the on-chain PDA (`daily-news-seeker-final`) and static URLs you configure (e.g. Arweave). No X/Twitter account data is collected in the app.
 - No personal X account data is collected or stored.
 
 ## How We Use Your Information
@@ -78,7 +78,7 @@ For privacy questions, data requests, or to report issues:
 **Optima Sanitas Legal Team**  
 Email: privacy@optimasanitas.com  
 X: @optima_sanitas  
-On-chain Program: `HyyetY9AHCNzGaJM2FhfCVtVGskfMBsFfjmWJrsXPM18`
+On-chain Program: `AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN`
 
 ---
 
