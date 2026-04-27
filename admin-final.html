@@ -1,8 +1,11 @@
 <!DOCTYPE html>
+<!-- Local: from fitness-sbt run `npm run admin:serve` → http://127.0.0.1:8787/admin-final.html
+     Governor = Program ID below. Target to upgrade = sanitas_seeker (AwZRz…). See docs/ADMIN_LOCAL_SERVER.md
+     **Optima Ops (sanitas_ops)**: buffer rent recovery + ProgramData extend — same page, see section below. -->
 <html>
 <head>
   <meta charset="utf-8">
-  <title>SanitasSeeker — Admin (Final with Upgrade Gate)</title>
+  <title>Optima Admin — Governor (upgrade gate) + Sanitas Ops</title>
   <style>
     body {font-family: system-ui; background:#0A0A0A; color:#00FF9D; padding:30px; max-width:920px; margin:0 auto;}
     h1 {color:#00FF9D;}
@@ -13,12 +16,49 @@
     .status {font-size:16px; padding:12px; border-radius:12px; background:#1E1E1E; margin:12px 0;}
     input {width:100%; background:#111; color:#0F0; padding:14px; border-radius:12px; border:2px solid #00FF9D; margin-bottom:12px; font-size:16;}
     .wallet-info {background:#111; padding:12px; border-radius:8px; margin:10px 0; font-family:monospace;}
+    /* Rare / destructive — close whole program (not buffer recovery) */
+    .dangerZone {
+      margin-top: 22px;
+      padding: 16px 18px;
+      border-radius: 12px;
+      border: 3px solid #E53935;
+      background: #1a0a0a;
+      color: #FFCDD2;
+    }
+    .dangerZone h4 { color: #FF5252; margin: 0 0 10px 0; font-size: 1.05rem; }
+    .dangerZone p, .dangerZone li { color: #FFCDD2; line-height: 1.5; }
+    .dangerZone code { color: #FFAB91; }
+    .dangerZone input { border-color: #E53935; color: #FFCDD2; }
+    .dangerButton {
+      background: #B71C1C !important;
+      color: #fff !important;
+      border: 2px solid #FF5252;
+    }
+    .dangerButton:hover { filter: brightness(1.08); }
+    #danger-cli-box { display: none; margin-top: 12px; padding: 12px; background: #0d0000; border: 1px solid #B71C1C; border-radius: 8px; font-family: monospace; font-size: 13px; color: #FFAB91; white-space: pre-wrap; word-break: break-all; }
   </style>
   <script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
 </head>
 <body>
-  <h1>🔑 SanitasSeeker Admin Panel (Final)</h1>
-  <p><strong>Program ID:</strong> <span id="current-program-id">73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ</span></p>
+  <h1>🔑 Optima Admin (Governor + Sanitas Ops)</h1>
+  <p class="status" style="line-height:1.5; color:#aaa; font-size:15px">
+    <strong>Upper section:</strong> 3-of-5 <strong>governor</strong> program (upgrade gate, execute to any Optima app program).<br>
+    <strong>Lower section:</strong> <strong>sanitas_ops</strong> — close buffers (rent recovery), <code>extend</code> ProgramData when the upgrade authority is the
+    <code>ext_auth</code> PDA. Uses the <strong>same</strong> wallet and RPC as above.
+  </p>
+  <p><strong>Governor program ID:</strong> <span id="current-program-id">73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ</span></p>
+
+  <div style="background:#1A1200; border:1px solid #5a4a00; border-radius:12px; padding:12px 14px; margin:12px 0;">
+    <label for="admin-cluster" style="display:block; margin-bottom:6px; color:#ccc;"><strong>Cluster</strong> (RPC + default program ids; set Phantom to the same cluster)</label>
+    <select id="admin-cluster" style="width:100%; max-width:420px; padding:10px; background:#111; color:#0F0; border:1px solid #00FF9D; border-radius:8px; font-size:15px;" onchange="applyAdminCluster()">
+      <option value="devnet">devnet (Helius)</option>
+      <option value="mainnet-beta">mainnet-beta (Helius)</option>
+    </select>
+    <p id="cluster-rpc-line" style="font-size:12px; color:#8a8; margin:8px 0 0 0; font-family:monospace; word-break:break-all;">RPC: —</p>
+    <p id="cluster-mainnet-signer-warn" style="display:none; font-size:13px; color:#FF9800; margin:6px 0 0 0; line-height:1.45;">
+      <strong>Mainnet 3-of-5 list:</strong> the array <code>UPGRADE_SIGNERS_MAINNET</code> in this page’s <code>&lt;script&gt;</code> must match the <code>UPGRADE_SIGNERS</code> constant in the <strong>mainnet</strong> governor binary (see <code>programs/governor/src/lib.rs</code>). The on-chain program <strong>only</strong> accepts those five pubkeys; this UI is for labeling — edit both before production mainnet.
+    </p>
+  </div>
 
   <!-- Dynamic Program ID Input -->
   <div style="background:#1E1E1E; padding:15px; border-radius:12px; margin:15px 0;">
@@ -79,20 +119,104 @@
     </div>
   </div>
 
+  <h3 style="color:#9CFF9C; margin-top:32px;">🧰 Optima Ops (sanitas_ops) — recover buffer rent · extend ProgramData</h3>
+  <div style="background:#1A1A1A; padding:20px; border-radius:12px; border:1px solid #2a4a3a; margin-top:8px;">
+    <p style="font-size:14px; color:#9cc; line-height:1.5; margin:0 0 12px 0">
+      <strong>Deploy first:</strong> repo <code>SeekerMobileCalc/onchain/sanitas-ops</code> (default id
+      <code>BrSCtnP6…</code>). <strong>Initialize</strong> once, then <strong>Recover</strong> or <strong>Extend</strong>.
+      <strong>sanitas_ops program id</strong> (below) is <em>not</em> the governor id above; it is a separate deploy.
+    </p>
+    <p style="font-size:14px; color:#aaa; line-height:1.5; margin:0 0 12px 0">
+      <strong>Buffer to recover</strong> = temp account from <code>solana program write-buffer</code> (new pubkey every run).<br>
+      <strong>Extend</strong> = <strong>app</strong> program id (e.g. <code>AwZRzJm…</code>) + its <strong>ProgramData</strong> (see “Show Optima PDAs”). Upgrade authority must be
+      the <code>ext_auth</code> PDA first (rotate from gate, extend, rotate back).
+    </p>
+    <label><strong>sanitas_ops program id (editable if redeployed):</strong></label>
+    <input id="ops-sanitas-program-id" type="text" value="BrSCtnP6NHmBYCLnX5yhXBiVFDb7MrP5pBaUxm8QCroh" placeholder="sanitas_ops program id" />
+    <p style="font-size:13px; color:#888; margin:6px 0 10px 0">Same RPC/connection as the governor section (Helius devnet in this file).</p>
+    <label><strong>Optional — governance for initialize (default = connected wallet when empty):</strong></label>
+    <input id="ops-init-governance" type="text" placeholder="Multisig / cold wallet, or leave empty" />
+    <label><strong>Optional — new governance for set_governance:</strong></label>
+    <input id="ops-new-governance" type="text" placeholder="Pubkey" />
+    <button type="button" class="tealButton" onclick="optimaOpsShowPdas()">Show Optima PDAs (config, buf_auth, ext_auth + program_data for app id below)</button>
+    <div id="ops-pda-out" class="status" style="font-size:13px; margin-top:10px; min-height:2.5em; color:#0F0; white-space:pre-wrap;"></div>
+    <button type="button" class="tealButton" onclick="optimaOpsInitialize()">1. Optima: initialize config</button>
+    <button type="button" class="orangeButton" onclick="optimaOpsSetGovernance()">2. Optima: set_governance</button>
+    <h4 style="color:#7fd87f; margin:18px 0 8px 0;">Recover rent (close buffer)</h4>
+    <p style="font-size:14px; color:#aaa; margin:0 0 8px 0">Connected wallet = <code>governance</code> and (keypair form) = buffer authority. <code>close_buffer_pda</code> when buffer auth is the <code>buf_auth</code> PDA.</p>
+    <label>Buffer account (from write-buffer)</label>
+    <input id="ops-buffer-kp" type="text" placeholder="Buffer pubkey" />
+    <label>Recipient (lamports)</label>
+    <input id="ops-recipient-kp" type="text" placeholder="Same as connected wallet or ops vault" />
+    <button type="button" class="tealButton" onclick="optimaOpsCloseBufferKeypair()">Recover: close_buffer_keypair</button>
+    <label style="margin-top:12px">Buffer (PDA auth path — authority = buf_auth PDA)</label>
+    <input id="ops-buffer-pda" type="text" placeholder="Buffer pubkey" />
+    <label>Recipient</label>
+    <input id="ops-recipient-pda" type="text" placeholder="Recipient" />
+    <button type="button" class="tealButton" onclick="optimaOpsCloseBufferPda()">Recover: close_buffer_pda</button>
+    <h4 style="color:#7fbfdf; margin:18px 0 8px 0;">Extend ProgramData</h4>
+    <label>App program id (upgradeable program, e.g. sanitas_seeker)</label>
+    <input id="ops-extend-app-program" type="text" placeholder="AwZRzJm…" />
+    <label>ProgramData account (for that program)</label>
+    <input id="ops-extend-program-data" type="text" placeholder="From explorer or solana program show" />
+    <label>Additional bytes (usually ≥ 10240 unless near 10MB cap)</label>
+    <input id="ops-extend-bytes" type="number" min="1" value="10240" />
+    <button type="button" class="tealButton" onclick="optimaOpsExtendProgram()">Extend ProgramData (payer = connected wallet)</button>
+    <div id="ops-action-log" class="status" style="font-size:14px; margin-top:12px; min-height:2em; color:#FF9800;"></div>
+
+    <div class="dangerZone">
+      <h4>⛔ DANGER — Close entire program (recover ProgramData + program account rent)</h4>
+      <p style="margin:0 0 8px 0; font-size:15px; font-weight:700; color:#FF8A80">
+        Do <strong>not</strong> use this for normal ops. This is <strong>not</strong> the same as &quot;Recover rent&quot; above (that only closes a <strong>buffer</strong>).
+      </p>
+      <p style="margin:0 0 8px 0; font-size:14px">
+        <strong>Closing a program</strong> permanently removes the executable at that program id. Clients, PDAs, and users depending on it will break. Use only for an <strong>abandoned</strong> devnet id or after you have migrated to a <strong>new</strong> program id.
+      </p>
+      <ul style="margin:8px 0 10px 18px; font-size:14px">
+        <li>Requires the <strong>upgrade authority</strong> to sign — usually a <strong>keypair</strong> in the CLI. If upgrade authority is a <strong>PDA</strong> (e.g. gate), you <strong>cannot</strong> run this blindly; you need a governor/CPI path or a temporary authority transfer your governance approves.</li>
+        <li>This page does <strong>not</strong> send the close tx; it only shows the <code>solana program close</code> command after you pass confirmations.</li>
+        <li>See <code>MAINNET_UPGRADE_PROCESS.md</code> § &quot;Close Old Programs/Buffers&quot; in this repo.</li>
+      </ul>
+      <label><strong>Program id to close</strong> (the upgradeable <em>app</em> program, e.g. sanitas_seeker)</label>
+      <input id="danger-close-program" type="text" placeholder="AwZRzJm…" />
+      <label><strong>Recipient</strong> (receives rent lamports — your vault or keypair address)</label>
+      <input id="danger-close-recipient" type="text" placeholder="Same as sanitas_payer or ops wallet" />
+      <button type="button" class="dangerButton" onclick="optimaDangerRevealCloseCli()">Show CLI (double confirmation) — I will run this in my terminal</button>
+      <div id="danger-cli-box"></div>
+    </div>
+  </div>
+
   <script>
     let provider = null;
-    let connection = new solanaWeb3.Connection("https://devnet.helius-rpc.com/?api-key=bcb31616-628f-4afc-ab24-82980bb8ea55", "confirmed");
-    
-    // === DYNAMIC PROGRAM ID ===
-    // Governor program (3-of-5 + execute_upgrade). Must differ from the app program below.
-    const DEFAULT_PROGRAM_ID = "73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ";
-    const DEFAULT_TARGET_PROGRAM_ID = "AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN";
-    /** Latest devnet buffer from `write-buffer` + `set-buffer-authority` to gate PDA; replace when you upload a new build. */
-    const DEFAULT_UPGRADE_BUFFER = "HJYEU11BEgiMq11BjEh5jKMuyphJ2d51Wr1QxmZ3cgSf";
-    let PROGRAM_ID = new solanaWeb3.PublicKey(DEFAULT_PROGRAM_ID);
-
-
-    const UPGRADE_SIGNERS = [
+    const LS_ADMIN_CLUSTER = "optima_admin_cluster_v1";
+    const HELIUS_KEY = "bcb31616-628f-4afc-ab24-82980bb8ea55";
+    const RPC_BY_CLUSTER = {
+      devnet: "https://devnet.helius-rpc.com/?api-key=" + HELIUS_KEY,
+      "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=" + HELIUS_KEY
+    };
+    /** Governor program id (often same keypair on devnet + mainnet; override in UI if you deploy a different id per cluster). */
+    const DEFAULT_GOVERNOR_ID_BY_CLUSTER = {
+      devnet: "73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ",
+      "mainnet-beta": "73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ"
+    };
+    const DEFAULT_TARGET_APP_ID_BY_CLUSTER = {
+      devnet: "AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN",
+      "mainnet-beta": "AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN"
+    };
+    const DEFAULT_SANITAS_OPS_ID_BY_CLUSTER = {
+      devnet: "BrSCtnP6NHmBYCLnX5yhXBiVFDb7MrP5pBaUxm8QCroh",
+      "mainnet-beta": "BrSCtnP6NHmBYCLnX5yhXBiVFDb7MrP5pBaUxm8QCroh"
+    };
+    // Must match on-chain `UPGRADE_SIGNERS` in the **devnet**-deployed governor.
+    const UPGRADE_SIGNERS_DEVNET = [
+      "5fkgfLSGCxJTWcqQHfzigQUnxA1NAaCmmCjQbXmTvVzc",
+      "CwyNHESJ95mccZkGPEEApQdeB4XEV5mSL1SRkn6Ee8qG",
+      "8TeEjQkh2CQTbKo57r3n5GrYGYUzvrmbj1eRJgbjZsjp",
+      "BpDZ6jrcPYo1GoM4DWk857ys4R7MgyZb4FmHjkC9beuH",
+      "CQsV3Wj6pdcgEkk5hkS6bd31Q2xp9fCuAqvV9WoLjqAR"
+    ];
+    // Replace with the five pubkeys in your **mainnet** governor `lib.rs` (programs/governor) before using mainnet Approver buttons.
+    const UPGRADE_SIGNERS_MAINNET = [
       "5fkgfLSGCxJTWcqQHfzigQUnxA1NAaCmmCjQbXmTvVzc",
       "CwyNHESJ95mccZkGPEEApQdeB4XEV5mSL1SRkn6Ee8qG",
       "8TeEjQkh2CQTbKo57r3n5GrYGYUzvrmbj1eRJgbjZsjp",
@@ -100,12 +224,336 @@
       "CQsV3Wj6pdcgEkk5hkS6bd31Q2xp9fCuAqvV9WoLjqAR"
     ];
 
+    let cluster = "devnet";
+    let connection = new solanaWeb3.Connection(RPC_BY_CLUSTER[cluster], "confirmed");
+
+    function getActiveSigners() {
+      return cluster === "mainnet-beta" ? UPGRADE_SIGNERS_MAINNET : UPGRADE_SIGNERS_DEVNET;
+    }
+
+    function getCliClusterUrl() {
+      return cluster === "mainnet-beta" ? "mainnet-beta" : "devnet";
+    }
+
+    function getSolscanClusterName() {
+      return cluster === "mainnet-beta" ? "mainnet" : "devnet";
+    }
+
+    window.applyAdminCluster = function () {
+      const sel = document.getElementById("admin-cluster");
+      if (!sel) return;
+      cluster = sel.value || "devnet";
+      try {
+        localStorage.setItem(LS_ADMIN_CLUSTER, cluster);
+      } catch (e) {}
+      connection = new solanaWeb3.Connection(RPC_BY_CLUSTER[cluster] || RPC_BY_CLUSTER["devnet"], "confirmed");
+      const rpcLine = document.getElementById("cluster-rpc-line");
+      if (rpcLine) rpcLine.textContent = "RPC: " + (RPC_BY_CLUSTER[cluster] || "");
+      const w = document.getElementById("cluster-mainnet-signer-warn");
+      if (w) w.style.display = cluster === "mainnet-beta" ? "block" : "none";
+
+      const gov = DEFAULT_GOVERNOR_ID_BY_CLUSTER[cluster] || DEFAULT_GOVERNOR_ID_BY_CLUSTER["devnet"];
+      const app = DEFAULT_TARGET_APP_ID_BY_CLUSTER[cluster] || DEFAULT_TARGET_APP_ID_BY_CLUSTER["devnet"];
+      const ops = DEFAULT_SANITAS_OPS_ID_BY_CLUSTER[cluster] || DEFAULT_SANITAS_OPS_ID_BY_CLUSTER["devnet"];
+      try {
+        PROGRAM_ID = new solanaWeb3.PublicKey(gov);
+        document.getElementById("current-program-id").innerText = gov;
+        document.getElementById("program-id-input").value = gov;
+        const tgt = document.getElementById("target-program-id");
+        if (tgt) tgt.value = app;
+        const oex = document.getElementById("ops-extend-app-program");
+        if (oex) oex.value = app;
+        const oops = document.getElementById("ops-sanitas-program-id");
+        if (oops) oops.value = ops;
+        const dcp = document.getElementById("danger-close-program");
+        if (dcp && !dcp.value.trim()) dcp.value = app;
+      } catch (e) {
+        console.warn(e);
+      }
+      void updateGatePDA();
+    };
+    
+    // === DYNAMIC PROGRAM ID ===
+    // Governor program (3-of-5 + execute_upgrade). Must differ from the app program below.
+    const DEFAULT_PROGRAM_ID = "73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ";
+    const DEFAULT_TARGET_PROGRAM_ID = "AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN";
+    /** Paste a fresh buffer after each `solana program write-buffer` (old buffers are invalid after upgrade). */
+    const DEFAULT_UPGRADE_BUFFER = "";
+    let PROGRAM_ID = new solanaWeb3.PublicKey(DEFAULT_PROGRAM_ID);
+
     const DISCRIMINATORS = {
       init: [119, 221, 101, 155, 1, 15, 39, 105],
       approve: [218, 6, 0, 77, 31, 202, 206, 123],
       setTimelock: [131, 159, 222, 21, 225, 226, 54, 214],
       pause: [142, 47, 86, 106, 135, 47, 208, 173],
       execute: [205, 219, 100, 218, 66, 39, 215, 24]
+    };
+
+    // === OPTIMA OPS (sanitas_ops) — same `connection` + `provider` as governor ===
+    const OPS_BPF_LOADER = new solanaWeb3.PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+    const OPS_DISC = {
+      close_buffer_keypair: new Uint8Array([246, 248, 158, 13, 53, 75, 64, 89]),
+      close_buffer_pda: new Uint8Array([164, 55, 44, 98, 138, 208, 3, 46]),
+      extend_program: new Uint8Array([143, 117, 164, 255, 235, 226, 17, 239]),
+      initialize: new Uint8Array([175, 175, 109, 31, 13, 152, 155, 237]),
+      set_governance: new Uint8Array([34, 71, 128, 245, 179, 42, 140, 137])
+    };
+    function opsPkBytes(p) {
+      if (typeof p.toBytes === "function") return p.toBytes();
+      if (p.toBuffer) return new Uint8Array(p.toBuffer());
+      return new Uint8Array(p);
+    }
+    function opsDiscData(disc, extra) {
+      const d = new Uint8Array(8 + (extra ? extra.length : 0));
+      d.set(disc, 0);
+      if (extra) d.set(extra, 8);
+      return d;
+    }
+    function opsU32le(n) {
+      const b = new DataView(new ArrayBuffer(4));
+      b.setUint32(0, n >>> 0, true);
+      return new Uint8Array(b.buffer);
+    }
+    function optimaOpsSanitasProgramId() {
+      return new solanaWeb3.PublicKey(document.getElementById("ops-sanitas-program-id").value.trim());
+    }
+    function optimaOpsConfigPda() {
+      const pid = optimaOpsSanitasProgramId();
+      return solanaWeb3.PublicKey.findProgramAddressSync([new TextEncoder().encode("config")], pid)[0];
+    }
+    function optimaOpsBufAuthPda() {
+      const pid = optimaOpsSanitasProgramId();
+      return solanaWeb3.PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode("buf_auth"), opsPkBytes(pid)],
+        pid
+      )[0];
+    }
+    function optimaOpsExtAuthPda(appProgramPk) {
+      const so = optimaOpsSanitasProgramId();
+      return solanaWeb3.PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode("ext_auth"), opsPkBytes(appProgramPk)],
+        so
+      )[0];
+    }
+    function optimaOpsSetLog(msg) {
+      const el = document.getElementById("ops-action-log");
+      if (el) el.textContent = msg;
+    }
+    async function optimaOpsSignAndSend(ix) {
+      if (!provider) throw new Error("Connect wallet first");
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      const tx = new solanaWeb3.Transaction().add(ix);
+      tx.recentBlockhash = blockhash;
+      tx.lastValidBlockHeight = lastValidBlockHeight;
+      tx.feePayer = provider.publicKey;
+      const sim = await connection.simulateTransaction(tx, { sigVerify: false, commitment: "confirmed" });
+      if (sim.value && sim.value.err) {
+        const logTail = (sim.value.logs || []).slice(-20).join("\n");
+        throw new Error("Simulation: " + JSON.stringify(sim.value.err) + (logTail ? "\n" + logTail : ""));
+      }
+      const signed = await provider.signTransaction(tx);
+      const singOpts = { requireAllSignatures: false, verifySignatures: false };
+      const raw = signed.serialize(singOpts);
+      const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+      const conf = await connection.confirmTransaction({ blockhash, lastValidBlockHeight, signature: sig }, "confirmed");
+      if (conf.value && conf.value.err) throw new Error("Confirm: " + JSON.stringify(conf.value.err));
+      return sig;
+    }
+    window.optimaOpsShowPdas = function () {
+      try {
+        const so = optimaOpsSanitasProgramId();
+        const cfg = optimaOpsConfigPda();
+        const bauth = optimaOpsBufAuthPda();
+        const exProg = (document.getElementById("ops-extend-app-program") && document.getElementById("ops-extend-app-program").value.trim()) || "";
+        var more = "";
+        if (exProg) {
+          const ap = new solanaWeb3.PublicKey(exProg);
+          const extA = optimaOpsExtAuthPda(ap);
+          const pd = solanaWeb3.PublicKey.findProgramAddressSync([opsPkBytes(ap)], OPS_BPF_LOADER)[0];
+          more = "\nextend_authority: " + extA.toBase58() + "\nProgramData: " + pd.toBase58();
+        }
+        document.getElementById("ops-pda-out").textContent =
+          "sanitas_ops: " + so.toBase58() + "\nconfig: " + cfg.toBase58() + "\nbuf_auth: " + bauth.toBase58() + more;
+      } catch (e) {
+        document.getElementById("ops-pda-out").textContent = "Error: " + (e && e.message ? e.message : e);
+      }
+    };
+    window.optimaOpsInitialize = async function () {
+      if (!provider) return alert("Connect wallet first");
+      try {
+        const so = optimaOpsSanitasProgramId();
+        const inGov = (document.getElementById("ops-init-governance") && document.getElementById("ops-init-governance").value.trim()) || "";
+        const g = inGov ? new solanaWeb3.PublicKey(inGov) : provider.publicKey;
+        const data = opsDiscData(OPS_DISC.initialize, opsPkBytes(g));
+        const cfg = optimaOpsConfigPda();
+        const ix = new solanaWeb3.TransactionInstruction({ programId: so, data: data, keys: [
+          { pubkey: cfg, isWritable: true, isSigner: false },
+          { pubkey: provider.publicKey, isWritable: true, isSigner: true },
+          { pubkey: solanaWeb3.SystemProgram.programId, isWritable: false, isSigner: false }
+        ]});
+        const sig = await optimaOpsSignAndSend(ix);
+        optimaOpsSetLog("initialize ok: " + sig);
+        alert("Optima: initialize sent — " + sig);
+      } catch (e) {
+        optimaOpsSetLog("Error: " + (e && e.message));
+        alert("Error: " + (e && e.message));
+      }
+    };
+    window.optimaOpsSetGovernance = async function () {
+      if (!provider) return alert("Connect wallet first");
+      const ng = (document.getElementById("ops-new-governance") && document.getElementById("ops-new-governance").value.trim()) || "";
+      if (!ng) return alert("Enter new governance pubkey in \"Optima — new governance\"");
+      try {
+        const so = optimaOpsSanitasProgramId();
+        const n = new solanaWeb3.PublicKey(ng);
+        const data = opsDiscData(OPS_DISC.set_governance, opsPkBytes(n));
+        const cfg = optimaOpsConfigPda();
+        const ix = new solanaWeb3.TransactionInstruction({ programId: so, data: data, keys: [
+          { pubkey: cfg, isWritable: true, isSigner: false },
+          { pubkey: provider.publicKey, isWritable: false, isSigner: true }
+        ]});
+        const sig = await optimaOpsSignAndSend(ix);
+        optimaOpsSetLog("set_governance ok: " + sig);
+        alert("set_governance sent — " + sig);
+      } catch (e) {
+        optimaOpsSetLog("Error: " + (e && e.message));
+        alert("Error: " + (e && e.message));
+      }
+    };
+    window.optimaOpsCloseBufferKeypair = async function () {
+      if (!provider) return alert("Connect wallet first");
+      const bufS = (document.getElementById("ops-buffer-kp") && document.getElementById("ops-buffer-kp").value.trim()) || "";
+      const recS = (document.getElementById("ops-recipient-kp") && document.getElementById("ops-recipient-kp").value.trim()) || "";
+      if (!bufS || !recS) return alert("Buffer and recipient for keypair form");
+      try {
+        const so = optimaOpsSanitasProgramId();
+        const cfg = optimaOpsConfigPda();
+        const buf = new solanaWeb3.PublicKey(bufS);
+        const rec = new solanaWeb3.PublicKey(recS);
+        const gov = provider.publicKey;
+        const data = opsDiscData(OPS_DISC.close_buffer_keypair);
+        const ix = new solanaWeb3.TransactionInstruction({ programId: so, data: data, keys: [
+          { pubkey: cfg, isWritable: false, isSigner: false },
+          { pubkey: gov, isWritable: false, isSigner: true },
+          { pubkey: buf, isWritable: true, isSigner: false },
+          { pubkey: rec, isWritable: true, isSigner: false },
+          { pubkey: gov, isWritable: false, isSigner: true },
+          { pubkey: OPS_BPF_LOADER, isWritable: false, isSigner: false }
+        ]});
+        const sig = await optimaOpsSignAndSend(ix);
+        optimaOpsSetLog("close_buffer_keypair ok: " + sig);
+        alert("Recovered rent (close) — " + sig);
+      } catch (e) {
+        optimaOpsSetLog("Error: " + (e && e.message));
+        alert("Error: " + (e && e.message));
+      }
+    };
+    window.optimaOpsCloseBufferPda = async function () {
+      if (!provider) return alert("Connect wallet first");
+      const bufS = (document.getElementById("ops-buffer-pda") && document.getElementById("ops-buffer-pda").value.trim()) || "";
+      const recS = (document.getElementById("ops-recipient-pda") && document.getElementById("ops-recipient-pda").value.trim()) || "";
+      if (!bufS || !recS) return alert("Buffer and recipient for PDA form");
+      try {
+        const so = optimaOpsSanitasProgramId();
+        const cfg = optimaOpsConfigPda();
+        const bufPda = optimaOpsBufAuthPda();
+        const buf = new solanaWeb3.PublicKey(bufS);
+        const rec = new solanaWeb3.PublicKey(recS);
+        const gov = provider.publicKey;
+        const data = opsDiscData(OPS_DISC.close_buffer_pda);
+        const ix = new solanaWeb3.TransactionInstruction({ programId: so, data: data, keys: [
+          { pubkey: cfg, isWritable: false, isSigner: false },
+          { pubkey: gov, isWritable: false, isSigner: true },
+          { pubkey: buf, isWritable: true, isSigner: false },
+          { pubkey: rec, isWritable: true, isSigner: false },
+          { pubkey: bufPda, isWritable: false, isSigner: false },
+          { pubkey: OPS_BPF_LOADER, isWritable: false, isSigner: false }
+        ]});
+        const sig = await optimaOpsSignAndSend(ix);
+        optimaOpsSetLog("close_buffer_pda ok: " + sig);
+        alert("Recovered rent (close, PDA auth) — " + sig);
+      } catch (e) {
+        optimaOpsSetLog("Error: " + (e && e.message));
+        alert("Error: " + (e && e.message));
+      }
+    };
+    window.optimaOpsExtendProgram = async function () {
+      if (!provider) return alert("Connect wallet first");
+      const ps = (document.getElementById("ops-extend-app-program") && document.getElementById("ops-extend-app-program").value.trim()) || "";
+      const pds = (document.getElementById("ops-extend-program-data") && document.getElementById("ops-extend-program-data").value.trim()) || "";
+      const n = Math.floor(Number((document.getElementById("ops-extend-bytes") && document.getElementById("ops-extend-bytes").value) || 0));
+      if (!ps || !pds) return alert("App program id and Program data required");
+      if (n < 1) return alert("Additional bytes > 0");
+      try {
+        const so = optimaOpsSanitasProgramId();
+        const appProg = new solanaWeb3.PublicKey(ps);
+        const pData = new solanaWeb3.PublicKey(pds);
+        const exPda = optimaOpsExtAuthPda(appProg);
+        const cfg = optimaOpsConfigPda();
+        const gov = provider.publicKey;
+        const data = opsDiscData(OPS_DISC.extend_program, opsU32le(n));
+        const ix = new solanaWeb3.TransactionInstruction({ programId: so, data: data, keys: [
+          { pubkey: cfg, isWritable: false, isSigner: false },
+          { pubkey: gov, isWritable: false, isSigner: true },
+          { pubkey: appProg, isWritable: true, isSigner: false },
+          { pubkey: pData, isWritable: true, isSigner: false },
+          { pubkey: provider.publicKey, isWritable: true, isSigner: true },
+          { pubkey: exPda, isWritable: false, isSigner: false },
+          { pubkey: solanaWeb3.SystemProgram.programId, isWritable: false, isSigner: false }
+        ]});
+        const sig = await optimaOpsSignAndSend(ix);
+        optimaOpsSetLog("extend_program ok: " + sig);
+        alert("extend sent — " + sig);
+      } catch (e) {
+        optimaOpsSetLog("Error: " + (e && e.message));
+        alert("Error: " + (e && e.message));
+      }
+    };
+
+    /**
+     * Informational only: two browser confirms, then show `solana program close` in-page.
+     * Does not send a transaction. Red panel explains why this is not “buffer recover”.
+     */
+    window.optimaDangerRevealCloseCli = function () {
+      const m1 =
+        "DANGER: You are about to view the CLI to CLOSE A PROGRAM permanently.\n\n" +
+        "• This is NOT the same as “Recover rent” (buffer close) above.\n" +
+        "• The program at that address will STOP EXISTING.\n\n" +
+        "Click OK only if you understand. Cancel = stop.";
+      if (!window.confirm(m1)) return;
+      const m2 =
+        "SECOND CONFIRMATION:\n\n" +
+        "Only use for an ABANDONED program id (e.g. old devnet) you will never use again.\n" +
+        "Your upgrade authority must be able to sign in the CLI (keypair). " +
+        "If upgrade authority is only a PDA (governor gate), do NOT use this path without a governance-approved flow.\n\n" +
+        "OK = show the solana program close command. Cancel = stop.";
+      if (!window.confirm(m2)) return;
+      const pStr = (document.getElementById("danger-close-program") && document.getElementById("danger-close-program").value.trim()) || "";
+      const rStr = (document.getElementById("danger-close-recipient") && document.getElementById("danger-close-recipient").value.trim()) || "";
+      if (!pStr || !rStr) {
+        alert("Fill in Program id to close and Recipient first.");
+        return;
+      }
+      try {
+        new solanaWeb3.PublicKey(pStr);
+        new solanaWeb3.PublicKey(rStr);
+      } catch (e) {
+        alert("Invalid pubkey: " + (e && e.message));
+        return;
+      }
+      const lines =
+        "# Run on a machine with the solana CLI + a keypair that is the UPGRADE AUTHORITY for this program.\n" +
+        "# Permanently closes the program; rent goes to --recipient.\n" +
+        "NO_DNA=1 solana program close " + pStr + " \\\n" +
+        "  --recipient " + rStr + " \\\n" +
+        "  --url " + getCliClusterUrl() + "\n\n" +
+        "# Safer, buffer rent only (same as Optima “Recover” above, different goal):\n" +
+        "# solana program close --buffers --keypair <KEYPAIR> --url " + getCliClusterUrl();
+      const box = document.getElementById("danger-cli-box");
+      if (box) {
+        box.style.display = "block";
+        box.textContent = lines;
+      }
     };
 
     // === DYNAMIC GATE PDA ===
@@ -154,6 +602,12 @@
       provider = window.solana;
       await provider.connect();
       document.getElementById("status").innerHTML = `<strong style="color:#00FF9D">✅ CONNECTED</strong>`;
+      const rk = document.getElementById("ops-recipient-kp");
+      if (rk && !rk.value.trim() && provider.publicKey) rk.value = provider.publicKey.toBase58();
+      const rp = document.getElementById("ops-recipient-pda");
+      if (rp && !rp.value.trim() && provider.publicKey) rp.value = provider.publicKey.toBase58();
+      const dr = document.getElementById("danger-close-recipient");
+      if (dr && !dr.value.trim() && provider.publicKey) dr.value = provider.publicKey.toBase58();
       await checkMyWallet();
     }
 
@@ -161,7 +615,7 @@
       if (!provider) return alert("Connect wallet first");
       const wallet = provider.publicKey.toString();
       document.getElementById("connected-wallet").innerText = wallet;
-      const index = UPGRADE_SIGNERS.findIndex(s => s === wallet);
+      const index = getActiveSigners().findIndex(s => s === wallet);
       if (index !== -1) {
         document.getElementById("wallet-signer").innerHTML = `<strong style="color:#00FF9D">Signer ${index} ✅</strong>`;
       } else {
@@ -328,11 +782,22 @@
   function hintForExecuteUpgradeSim(err, logs) {
     const code = anchorCustomCodeFromErr(err);
     const logStr = (logs || []).join("\n");
+    if (String(err).includes("IncorrectAuthority") || logStr.includes("IncorrectAuthority")) {
+      return (
+        "\n\n— Why IncorrectAuthority? (BPF loader) —\n" +
+        "Execute signs the upgrade as the **upgrade-gate PDA** (see “Upgrade Gate PDA” above).\n" +
+        "The **Target program** and the **Buffer** must both list that **same PDA** as upgrade / buffer authority.\n" +
+        "If the program was deployed with your wallet as authority, run (once) **before** Execute:\n" +
+        "1) set-upgrade-authority (target) → gate PDA\n" +
+        "2) set-buffer-authority (buffer) → same gate PDA\n" +
+        "See `MAINNET_UPGRADE_PROCESS.md` section 3 and `PRE-FLIGHT_CHECKLIST.md`."
+      );
+    }
     if (code === 6000 || logStr.includes("6000") || logStr.includes("0x1770") || logStr.includes("Unauthorized")) {
       return (
         "\n\n— Why 6000 Unauthorized? —\n" +
         "• The gate needs **3 distinct signer approvals** before Execute Upgrade. After a **successful** upgrade, the program **clears approvals** — you must approve again (3 keys or 3 txs).\n" +
-        "• Your connected wallet must be one of the **five** `UPGRADE_SIGNERS` pubkeys.\n" +
+        "• Your connected wallet must be one of the **five** approver pubkeys for this cluster (`UPGRADE_SIGNERS_DEVNET` / `UPGRADE_SIGNERS_MAINNET` in this page).\n" +
         "• Buffer and Target in the form must match the instruction (rare mismatch).\n" +
         'Click **"Check Gate Status"** to see approval count.'
       );
@@ -429,7 +894,7 @@
     const raw = signed.serialize(signOpts);
     const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
     console.log("✅ Transaction sent:", sig);
-    alert(`Transaction sent!\nhttps://solscan.io/tx/${sig}?cluster=devnet`);
+    alert(`Transaction sent!\nhttps://solscan.io/tx/${sig}?cluster=${getSolscanClusterName()}`);
   } catch (error) {
     console.error("❌ Error:", error);
     alert("Error: " + error.message);
@@ -523,7 +988,7 @@
       }
 
       html += "\n<strong>Gate PDA</strong> (expected upgrade authority) " + gatePda.toBase58() + "\n";
-      html += "\n<small>CLI cross-check: <code style='color:#8ff'>solana program show " + targetProgram.toBase58() + " --url devnet</code></small>";
+      html += "\n<small>CLI cross-check: <code style='color:#8ff'>solana program show " + targetProgram.toBase58() + " --url " + getCliClusterUrl() + "</code></small>";
       out.innerHTML = html.replace(/\n/g, "<br>");
     } catch (e) {
       out.innerHTML = "<span style='color:#FF3D00'>Error: " + e.message + "</span>";
@@ -532,13 +997,27 @@
   };
 
 
-    // Auto-update gate PDA on load
+    // Auto-update gate PDA on load + restore cluster (localStorage)
     window.addEventListener('load', async () => {
+      let saved = "devnet";
+      try {
+        saved = localStorage.getItem(LS_ADMIN_CLUSTER) || "devnet";
+      } catch (e) {}
+      const sel = document.getElementById("admin-cluster");
+      if (sel) {
+        if (saved === "mainnet-beta") sel.value = "mainnet-beta";
+        else sel.value = "devnet";
+      }
+      window.applyAdminCluster();
       document.getElementById("current-program-id").innerText = PROGRAM_ID.toBase58();
       document.getElementById("program-id-input").value = PROGRAM_ID.toBase58();
-      document.getElementById("target-program-id").value = DEFAULT_TARGET_PROGRAM_ID;
+      document.getElementById("target-program-id").value = DEFAULT_TARGET_APP_ID_BY_CLUSTER[cluster] || DEFAULT_TARGET_PROGRAM_ID;
       const bufEl = document.getElementById("upgrade-buffer");
       if (bufEl && !bufEl.value.trim()) bufEl.value = DEFAULT_UPGRADE_BUFFER;
+      const oex = document.getElementById("ops-extend-app-program");
+      if (oex && !oex.value.trim()) oex.value = DEFAULT_TARGET_APP_ID_BY_CLUSTER[cluster] || DEFAULT_TARGET_PROGRAM_ID;
+      const dcp = document.getElementById("danger-close-program");
+      if (dcp && !dcp.value.trim()) dcp.value = DEFAULT_TARGET_APP_ID_BY_CLUSTER[cluster] || DEFAULT_TARGET_PROGRAM_ID;
       await updateGatePDA();
     });
 

@@ -10,6 +10,7 @@ name = "upgrade_governor"
 
 [dependencies]
 anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
+solana-loader-v3-interface = { version = "6.1.1", default-features = false, features = ["bincode"] }
 
 [features]
 idl-build = ["anchor-lang/idl-build"]

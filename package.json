@@ -3,6 +3,7 @@
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "admin:serve": "node scripts/serve-admin.cjs",
     "devnet:approve-gate": "node scripts/devnet-auto-approve-gate.cjs",
     "devnet:set-genesis-mint": "node scripts/set-seeker-genesis-mint.cjs"
   },

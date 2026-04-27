@@ -152,6 +152,16 @@ pub mod sanitas_seeker {
         Ok(())
     }
 
+    /// **Seeker Mobile Calc** — separate SKR vault (`seeker-calc-fund` PDA) for optional micro-claims, **not** mixed with
+    /// exercise `bootstrap` / `reward-pool` balances. Fund the vault with normal SPL transfers to its ATA after init.
+    pub fn initialize_calc_fund(ctx: Context<InitializeCalcFund>) -> Result<()> {
+        let c = &mut ctx.accounts.calc_fund;
+        c.authority = ctx.accounts.user.key();
+        c.bump = ctx.bumps.calc_fund;
+        msg!("seeker-calc-fund PDA + vault ok");
+        Ok(())
+    }
+
     // ==================== ADMIN ====================
     pub fn toggle_rewards(ctx: Context<ToggleRewards>, enable: bool) -> Result<()> {
         let c = &mut ctx.accounts.mint_config;
@@ -239,6 +249,45 @@ pub mod sanitas_seeker {
         }
         ux.last_active_day = now_day;
         ux.bump = ctx.bumps.user_exercise;
+        Ok(())
+    }
+
+    /// **0.05 SKR** from **only** `seeker-calc-fund` vault, **once per game-day** — same `claim_day` as `claim_daily_skr`.
+    /// Gated by global `rewards_enabled`. Does **not** require `log_workout` / exercise sets; does require Seeker genesis.
+    /// Does not increment `minted_phase1` (exercise cohort is separate).
+    pub fn claim_calc_skr(ctx: Context<ClaimCalcSKR>) -> Result<()> {
+        require!(
+            ctx.accounts.mint_config.rewards_enabled,
+            ErrorCode::RewardsDisabled
+        );
+        verify_seeker_genesis_ownership(
+            &ctx.accounts.genesis_gate.seeker_genesis_mint,
+            &ctx.accounts.user,
+            &ctx.accounts.user_genesis_ata,
+        )?;
+        let now = Clock::get()?.unix_timestamp;
+        let now_day = claim_day(now);
+        let uc = &mut ctx.accounts.user_calc_claim;
+        require!(uc.last_claim_day < now_day, ErrorCode::AlreadyClaimedToday);
+        const AM: u64 = 50_000_000; // 0.05 SKR
+        require!(
+            ctx.accounts.calc_fund_vault.amount >= AM,
+            ErrorCode::InsufficientRewardPool
+        );
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                Transfer {
+                    from: ctx.accounts.calc_fund_vault.to_account_info(),
+                    to: ctx.accounts.user_token_account.to_account_info(),
+                    authority: ctx.accounts.calc_fund.to_account_info(),
+                },
+                &[&[b"seeker-calc-fund", &[ctx.accounts.calc_fund.bump]]],
+            ),
+            AM,
+        )?;
+        uc.last_claim_day = now_day;
+        uc.bump = ctx.bumps.user_calc_claim;
         Ok(())
     }
 
@@ -911,6 +960,20 @@ pub struct BootstrapPool {
     pub bump: u8,
 }
 
+/// PDA `[b"seeker-calc-fund"]` — **Seeker Mobile Calc** community SKR vault (separate from exercise pools).
+#[account]
+pub struct CalcFund {
+    pub authority: Pubkey,
+    pub bump: u8,
+}
+
+/// One row per wallet: last game-day a **calc** claim succeeded (separate from `UserState` / exercise).
+#[account]
+pub struct UserCalcClaim {
+    pub last_claim_day: u32,
+    pub bump: u8,
+}
+
 /// PDA `[b"stake-vault"]` — SKR ATA that receives the **50%** leg of `split_reward_pool_excess`.
 /// Naming reflects **policy** (long-term staking allocation), not an integrated stake program: no CPI to a stake pool here.
 #[account]
@@ -1073,6 +1136,32 @@ pub struct InitializeRewardPools<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeCalcFund<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = 8 + 32 + 1,
+        seeds = [b"seeker-calc-fund"],
+        bump
+    )]
+    pub calc_fund: Account<'info, CalcFund>,
+    #[account(
+        init,
+        payer = user,
+        associated_token::mint = skr_mint,
+        associated_token::authority = calc_fund,
+    )]
+    pub calc_fund_vault: Account<'info, TokenAccount>,
+    #[account(mut, address = pubkey!("DCrfzg5T8hijkX8EM6oN9sh4Ucm1AMqqNZQZBGTbmofQ"))]
+    pub skr_mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
 pub struct ToggleRewards<'info> {
     #[account(mut, seeds = [b"mint-config"], bump)]
     pub mint_config: Account<'info, MintConfig>,
@@ -1188,6 +1277,44 @@ pub struct ClaimDailySKR<'info> {
         constraint = genesis_mint.key() == genesis_gate.seeker_genesis_mint @ ErrorCode::MissingGenesisNft
     )]
     pub genesis_mint: InterfaceAccount<'info, GenesisMintTy>,
+    #[account(constraint = user_genesis_ata.mint == genesis_mint.key(), constraint = user_genesis_ata.owner == user.key())]
+    pub user_genesis_ata: Box<InterfaceAccount<'info, GenesisTokenAccount>>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimCalcSKR<'info> {
+    #[account(seeds = [b"mint-config"], bump)]
+    pub mint_config: Account<'info, MintConfig>,
+    #[account(seeds = [b"genesis-gate"], bump = genesis_gate.bump)]
+    pub genesis_gate: Account<'info, GenesisGateConfig>,
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + 4 + 1,
+        seeds = [b"user-calc-claim", user.key().as_ref()],
+        bump
+    )]
+    pub user_calc_claim: Box<Account<'info, UserCalcClaim>>,
+    #[account(mut, seeds = [b"seeker-calc-fund"], bump = calc_fund.bump)]
+    pub calc_fund: Account<'info, CalcFund>,
+    #[account(
+        mut,
+        associated_token::mint = skr_mint,
+        associated_token::authority = calc_fund
+    )]
+    pub calc_fund_vault: Box<Account<'info, TokenAccount>>,
+    #[account(mut, associated_token::mint = skr_mint, associated_token::authority = user)]
+    pub user_token_account: Box<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(address = pubkey!("DCrfzg5T8hijkX8EM6oN9sh4Ucm1AMqqNZQZBGTbmofQ"))]
+    pub skr_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+    #[account(
+        constraint = genesis_mint.key() == genesis_gate.seeker_genesis_mint @ ErrorCode::MissingGenesisNft
+    )]
+    pub genesis_mint: Box<InterfaceAccount<'info, GenesisMintTy>>,
     #[account(constraint = user_genesis_ata.mint == genesis_mint.key(), constraint = user_genesis_ata.owner == user.key())]
     pub user_genesis_ata: Box<InterfaceAccount<'info, GenesisTokenAccount>>,
     pub system_program: Program<'info, System>,
