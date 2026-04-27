@@ -1,5 +1,17 @@
 # SanitasSeeker + LEV — single documentation set
 
+## Three connected Git repositories (check on every push)
+
+Product work spans **three clones** (different GitHub remotes). After a session, verify **`git status`** and **`git push`** in **each** repo you changed—especially when editing **`programs/*/src/lib.rs`** here.
+
+| Local path (typical) | GitHub | Role |
+|----------------------|--------|------|
+| `../App/` | **OptimaSanitas/lev-app** | Sanitas Seeker — **exercise** React Native app. |
+| `../../Optima_newApps/SeekerMobileCalc` (or your Calc clone) | **OptimaSanitas/SeekerMobileCalc** | Sanitas Calc — calculator + Solana tab (companion). |
+| **this repo** (`fitness-sbt/`) | **OptimaSanitas/lev-anchor** | Anchor — **this** program source. |
+
+Calc repo handoff with the same checklist: **`SeekerMobileCalc/CONTINUATION.md`** → section *Three connected Git repositories*.
+
 **Handoff (2026-04-26):** Legal + terms here are the **only** copy for the exercise app and program; **`lev-anchor`** on GitHub mirrors this for stores (`App` → `src/legalUrls.ts`); **push** `main` on **`OptimaSanitas/lev-anchor`** when you change these files. **`App/docs/`** only holds app-specific QA / Play text — no duplicate PRIVACY here. Wider org notes: parent **`../CONTINUATION_LOG.md`**.
 
 **Canonical copy lives here** (`fitness-sbt/docs/`) for both:
