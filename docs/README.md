@@ -1,5 +1,7 @@
 # SanitasSeeker + LEV — single documentation set
 
+**Handoff (2026-04-26):** Legal + terms here are the **only** copy for the exercise app and program; **`lev-anchor`** on GitHub mirrors this for stores (`App` → `src/legalUrls.ts`); **push** `main` on **`OptimaSanitas/lev-anchor`** when you change these files. **`App/docs/`** only holds app-specific QA / Play text — no duplicate PRIVACY here. Wider org notes: parent **`../CONTINUATION_LOG.md`**.
+
 **Canonical copy lives here** (`fitness-sbt/docs/`) for both:
 
 - the **SanitasSeeker** exercise app (sibling: `../App/`), and  
