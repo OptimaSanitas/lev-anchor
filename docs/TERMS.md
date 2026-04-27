@@ -1,8 +1,8 @@
 # Sanitas Seeker — Terms of Use (Beta)
 
-**Last updated:** April 25, 2026 · **Operator:** Optima Sanitas
+**Last updated:** April 26, 2026 · **Operator:** Optima Sanitas
 
-These Terms of Use (“Terms”) govern your use of the Sanitas Seeker mobile application (the “App”) and related on-chain programs on Solana. By using the App, you agree to these Terms.
+These Terms of Use (“Terms”) govern your use of **SanitasSeeker** (the “App”) and related on-chain programs on Solana. The **App** is provided **for [Solana Mobile Seeker](https://solanamobile.com/seeker)** (Solana Mobile’s **Android** phone) in the current release; we do not ship an **iOS** build. By using the App, you agree to these Terms.
 
 ## 1. Beta software
 
@@ -38,8 +38,11 @@ We may update these Terms. Material changes may be announced via the in-app news
 
 ## 9. Contact
 
-- **X:** [@optima_sanitas](https://x.com/optima_sanitas)
-- **Privacy policy:** [PRIVACY_POLICY.md](./PRIVACY_POLICY.md) (same folder on GitHub)
+We do not operate a separate public website for this product line.
+
+- **Preferred:** **X** — [@optima_sanitas](https://x.com/optima_sanitas)  
+- **Email:** [optimasanitas@atomicmail.io](mailto:optimasanitas@atomicmail.io)  
+- **Privacy policy:** [PRIVACY_POLICY.md](./PRIVACY_POLICY.md) (same folder on GitHub)  
 - **Program repository:** [OptimaSanitas/lev-anchor](https://github.com/OptimaSanitas/lev-anchor)
 
 On-chain program (reference): `AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN`

@@ -8,7 +8,7 @@ SanitasSeeker ("the App"), including all source code, UI/UX design, branding (da
 
 **Optima Sanitas**  
 A decentralized longevity & performance project  
-Contact: legal@optimasanitas.com
+Contact: [optimasanitas@atomicmail.io](mailto:optimasanitas@atomicmail.io) · [@optima_sanitas](https://x.com/optima_sanitas) (no separate product website)
 
 All rights reserved.
 
@@ -22,7 +22,7 @@ No part of this application, its on-chain programs, documentation, or associated
 
 This document confirms full ownership and legal compliance for:
 
-- The React Native mobile application (iOS & Android builds for Solana Seeker)
+- The **SanitasSeeker** React Native application (**Android** for **Solana Mobile Seeker**; no iOS product release in the current line)
 - The Solana Anchor smart contract (`sanitas_seeker` program ID: `AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN`)
 - All Soulbound Tokens (SBTs), SKR tokens, Genesis NFTs, and reward mechanisms
 - User data handling, GPS tracking, accelerometer fusion, and on-chain logging features
@@ -39,7 +39,7 @@ THE APP AND ON-CHAIN PROGRAMS ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
 
 Users are responsible for securing their Solana wallets and understanding the risks of on-chain transactions.
 
-For full legal inquiries, contact: legal@optimasanitas.com
+For full legal inquiries: [optimasanitas@atomicmail.io](mailto:optimasanitas@atomicmail.io) or [@optima_sanitas](https://x.com/optima_sanitas)
 
 ---
 

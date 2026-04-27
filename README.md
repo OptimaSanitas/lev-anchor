@@ -4,6 +4,17 @@
 
 **Repo:** this directory is the **public** Anchor workspace (remote is commonly `OptimaSanitas/lev-anchor`). The **React Native client** is the sibling **`../App/`** tree (**private** `lev-app`). Operator-only files `MAINNET_UPGRADE_PROCESS.md`, `PRE-FLIGHT_CHECKLIST.md`, and `scripts/preflight-upgrade.sh` are **gitignored** here; keep local copies for your own upgrades.
 
+### Legal docs (app links)
+
+**Single set of docs** for app + program: all live under **[docs/](./docs/)** in this tree. Do not duplicate them under `../App/docs/`.
+
+The **SanitasSeeker** app opens **Terms** and **Privacy** from the public **`lev-anchor`** copy on GitHub (no Pages required):
+
+- [docs/TERMS.md](docs/TERMS.md) → `https://github.com/OptimaSanitas/lev-anchor/blob/main/docs/TERMS.md`
+- [docs/PRIVACY_POLICY.md](docs/PRIVACY_POLICY.md) → `https://github.com/OptimaSanitas/lev-anchor/blob/main/docs/PRIVACY_POLICY.md`
+
+**Optional — GitHub Pages:** If you use **Settings → Pages → Deploy from a branch**, pick branch **`main`** and folder **`/docs`** (not `/ (root)`), or the site will not serve `terms.html` / `privacy.html`. The app does **not** depend on Pages when using the blob URLs above.
+
 ## Overview
 
 This Anchor program powers the LEV mobile app. It issues non-transferable Soulbound Tokens (SBTs) to users who complete verified walk-run exercise sessions using GPS speed detection on the Solana Seeker phone.

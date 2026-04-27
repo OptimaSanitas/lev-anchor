@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sanitas Seeker — Privacy Policy</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem;
+      line-height: 1.55; color: #111; background: #fafafa; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+    ul { padding-left: 1.25rem; }
+    a { color: #0969da; }
+    footer { margin-top: 2rem; font-size: 0.85rem; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Sanitas Seeker Privacy Policy</h1>
+  <p><strong>Last Updated: April 19, 2026</strong></p>
+
+  <h2>Introduction</h2>
+  <p>Sanitas Seeker (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application (the &ldquo;App&rdquo;) on Solana Seeker devices, including sprint interval training tracking, optional on-chain SKE-Claim pool rewards (SKR) when enabled—not guaranteed or on a fixed daily schedule, daily longevity/news threads, and related features.</p>
+  <p>By using the App, you consent to the data practices described in this policy.</p>
+
+  <h2>Information We Collect</h2>
+  <h3>1. Personal &amp; Fitness Data</h3>
+  <ul>
+    <li><strong>Exercise Metrics</strong>: Distance walked/ran (GPS), sets completed, speed, accelerometer data (for movement detection fusion), calories burned (estimated).</li>
+    <li><strong>Workout History</strong>: Timestamps, phase durations, total progress stored locally and logged on-chain via <code>log_workout</code> and <code>update_fitness_stats</code> instructions.</li>
+    <li><strong>SBT Data</strong>: Soulbound Token metadata (labels, version, is_early/Legend status) stored on-chain.</li>
+  </ul>
+
+  <h3>2. Location Data (GPS)</h3>
+  <p>Precise location (latitude/longitude) is collected <strong>only during active workout sessions</strong> for accurate distance tracking in sprint intervals. Location permission is requested at runtime. We do <strong>not</strong> track location in the background or when the App is closed. Data is processed locally on-device for real-time speed/distance and sent on-chain only as aggregated workout summaries.</p>
+
+  <h3>3. Wallet &amp; On-Chain Data</h3>
+  <ul>
+    <li>Solana wallet address and public key (via Mobile Wallet Adapter / Seed Vault).</li>
+    <li>Transaction signatures for daily micro-rewards (<code>claim_daily_reward</code>), SBT minting (<code>mint_sbt</code>), and SKR claims.</li>
+    <li>On-chain account data (UserExerciseState, SbtAccount, etc.) is publicly visible on Solana explorers.</li>
+  </ul>
+
+  <h3>4. Device &amp; Usage Data</h3>
+  <ul>
+    <li>Device model (Solana Seeker), OS version, app version.</li>
+    <li>App usage analytics (screens visited, workout completion rates) — stored locally only.</li>
+    <li>No cookies or cross-app tracking.</li>
+  </ul>
+
+  <h3>5. News &amp; Social Data</h3>
+  <ul>
+    <li>Daily issue content (workout video URLs, text, optional persona image, optional outbound links) resolved from the on-chain PDA (<code>daily-news-seeker-final</code>) and static URLs you configure (e.g. Arweave). No X/Twitter account data is collected in the app.</li>
+    <li>No personal X account data is collected or stored.</li>
+  </ul>
+
+  <h2>How We Use Your Information</h2>
+  <ul>
+    <li><strong>Core Functionality</strong>: Enable accurate sprint interval training, GPS distance tracking, and real-time phase transitions (walk → run → walk).</li>
+    <li><strong>On-Chain Rewards</strong>: Verify Seeker Genesis NFT ownership, log workouts, and, when the admin enables claims and the pool is funded, distribute SKR from the SKE-Claim pool (program pool; no promise of a daily amount or schedule).</li>
+    <li><strong>SBT Minting &amp; Legend System</strong>: Create and update personal Soulbound Tokens with your fitness achievements and optional paid Legend extensions.</li>
+    <li><strong>News Feed</strong>: Deliver curated longevity content directly from the on-chain daily news PDA.</li>
+    <li><strong>Improvement</strong>: Analyze aggregated (anonymized) workout trends to improve interval recommendations (future LEVHealth integration).</li>
+  </ul>
+
+  <h2>Data Sharing &amp; Disclosure</h2>
+  <ul>
+    <li><strong>On-Chain Public Data</strong>: All workout logs, SBTs, and reward claims are permanently recorded on the Solana blockchain and viewable by anyone via explorers (Solscan, etc.).</li>
+    <li><strong>No Third-Party Selling</strong>: We never sell your personal data.</li>
+    <li><strong>Service Providers</strong>: Minimal — only Solana RPC nodes (Helius devnet/mainnet) for transaction submission. No analytics SDKs (Firebase, etc.) are used.</li>
+    <li><strong>Legal Requirements</strong>: We may disclose information if required by law, court order, or to protect our rights.</li>
+  </ul>
+
+  <h2>Data Security</h2>
+  <ul>
+    <li>All sensitive operations (wallet signing, transaction building) occur inside the secure Seed Vault on the Seeker phone.</li>
+    <li>No private keys ever leave the device.</li>
+    <li>On-device data (AsyncStorage, Redux) is encrypted at rest where possible.</li>
+    <li>On-chain data is immutable by design.</li>
+  </ul>
+
+  <h2>Your Rights &amp; Choices</h2>
+  <ul>
+    <li><strong>Delete Data</strong>: You can reset your local progress in Settings. On-chain data (SBTs, workout history) cannot be deleted due to blockchain immutability.</li>
+    <li><strong>Opt-Out of Rewards</strong>: Toggle &ldquo;Rewards Enabled&rdquo; off in Settings (calls <code>toggle_rewards</code> instruction).</li>
+    <li><strong>Location Permission</strong>: Revoke GPS access anytime in phone settings. Workout tracking will be disabled.</li>
+    <li><strong>Wallet Disconnect</strong>: Use the built-in disconnect button — clears Redux state only.</li>
+  </ul>
+
+  <h2>Children's Privacy</h2>
+  <p>The App is not intended for children under 18. We do not knowingly collect data from minors.</p>
+
+  <h2>Changes to This Policy</h2>
+  <p>We may update this Privacy Policy from time to time. Material changes will be announced via the in-app news feed (on-chain <code>update_daily_news</code> instruction). Continued use after changes constitutes acceptance.</p>
+
+  <h2>Contact Us</h2>
+  <p>For privacy questions, data requests, or to report issues:</p>
+  <p><strong>Optima Sanitas Legal Team</strong><br />
+  Email: <a href="mailto:privacy@optimasanitas.com">privacy@optimasanitas.com</a><br />
+  X: <a href="https://x.com/optima_sanitas">@optima_sanitas</a><br />
+  On-chain Program: <code>AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN</code></p>
+
+  <p>See also: <a href="terms.html">Terms of Use</a> · <a href="https://github.com/OptimaSanitas/lev-anchor/blob/main/docs/PRIVACY_POLICY.md">Source markdown (repository)</a></p>
+
+  <footer>Hosted for compliance via GitHub Pages from the <code>lev-anchor</code> repository <code>/docs</code> folder. Canonical policy text may also appear in the <code>lev-app</code> repository under <code>docs/</code>.</footer>
+</body>
+</html>

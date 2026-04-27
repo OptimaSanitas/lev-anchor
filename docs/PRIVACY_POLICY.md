@@ -1,10 +1,10 @@
 # SanitasSeeker Privacy Policy
 
-**Last Updated: April 19, 2026**
+**Last Updated: April 26, 2026**
 
 ## Introduction
 
-SanitasSeeker ("we", "us", or "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application (the "App") on Solana Seeker devices, including sprint interval training tracking, on-chain micro-rewards (0.01 SOL daily), daily longevity/news threads, and related features.
+**Optima Sanitas** ("we", "us", or "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use **SanitasSeeker** (the "App") on **[Solana Mobile Seeker](https://solanamobile.com/seeker)**—Solana Mobile’s **Android** phone built for the Solana ecosystem. The current release is **Android-only**; we do not ship an iOS build. The App provides sprint interval training, optional on-chain SKE-Claim pool rewards (SKR) when enabled—not guaranteed or on a fixed daily schedule, daily longevity/news threads, and related features.
 
 By using the App, you consent to the data practices described in this policy.
 
@@ -26,7 +26,7 @@ By using the App, you consent to the data practices described in this policy.
 - On-chain account data (UserExerciseState, SbtAccount, etc.) is publicly visible on Solana explorers.
 
 ### 4. Device & Usage Data
-- Device model (Solana Seeker), OS version, app version.
+- Device model (**Solana Mobile Seeker** / Android), OS version, app version.
 - App usage analytics (screens visited, workout completion rates) — stored locally only.
 - No cookies or cross-app tracking.
 
@@ -37,7 +37,7 @@ By using the App, you consent to the data practices described in this policy.
 ## How We Use Your Information
 
 - **Core Functionality**: Enable accurate sprint interval training, GPS distance tracking, and real-time phase transitions (walk → run → walk).
-- **On-Chain Rewards**: Verify Seeker Genesis NFT ownership, log workouts, and distribute 0.01 SOL micro-rewards daily via the reward vault PDA.
+- **On-Chain Rewards**: Verify Seeker Genesis NFT ownership, log workouts, and, when the admin enables claims and the pool is funded, distribute SKR from the SKE-Claim pool (program pool; no promise of a daily amount or schedule).
 - **SBT Minting & Legend System**: Create and update personal Soulbound Tokens with your fitness achievements and optional paid Legend extensions.
 - **News Feed**: Deliver curated longevity content directly from the on-chain daily news PDA.
 - **Improvement**: Analyze aggregated (anonymized) workout trends to improve interval recommendations (future LEVHealth integration).
@@ -73,12 +73,12 @@ We may update this Privacy Policy from time to time. Material changes will be an
 
 ## Contact Us
 
-For privacy questions, data requests, or to report issues:
+For privacy questions, data requests, or to report issues with **SanitasSeeker**, **Optima Sanitas** is reachable as follows. We do **not** maintain a separate public product website for this app.
 
-**Optima Sanitas Legal Team**  
-Email: privacy@optimasanitas.com  
-X: @optima_sanitas  
-On-chain Program: `AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN`
+- **Preferred:** [**X** — @optima_sanitas](https://x.com/optima_sanitas)  
+- **Email:** [optimasanitas@atomicmail.io](mailto:optimasanitas@atomicmail.io)  
+
+**On-chain program (reference):** `AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN`
 
 ---
 
