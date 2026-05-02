@@ -15,3 +15,6 @@ scratch/**
 MAINNET_UPGRADE_PROCESS.md
 PRE-FLIGHT_CHECKLIST.md
 scripts/preflight-upgrade.sh
+
+# Cursor/agent continuation notes — keep local only
+CONTINUATION.md
