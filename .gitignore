@@ -16,5 +16,19 @@ MAINNET_UPGRADE_PROCESS.md
 PRE-FLIGHT_CHECKLIST.md
 scripts/preflight-upgrade.sh
 
+# Admin HTML + internal markdown — keep locally / in export zips; not published on GitHub
+admin-final.html
+BETA_MINIMAL.md
+PROGRAM_IDS.md
+docs/README.md
+docs/ADMIN_LOCAL_SERVER.md
+docs/CNFT_LEGEND_ROADMAP.md
+docs/FUTURE_SECOND_REWARD_MINT.md
+docs/LEGEND_MINT_RESTORE_AND_TEST.md
+docs/SEEKER_CALC_FUND.md
+docs/SKR_STAKING_INTEGRATION.md
+archive/README.md
+keys/README.md
+
 # Cursor/agent continuation notes — keep local only
 CONTINUATION.md
