@@ -232,11 +232,8 @@ checksum = "300e2e8058e674e8d6ea7c72dfb8be4349609dd9c3760ce729fc6406199624fe"
 dependencies = [
  "anchor-lang",
  "spl-associated-token-account-interface",
- "spl-pod",
  "spl-token-2022-interface",
- "spl-token-group-interface",
  "spl-token-interface",
- "spl-token-metadata-interface",
 ]
 
 [[package]]
@@ -2147,6 +2144,7 @@ name = "upgrade_governor"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "bincode",
  "solana-loader-v3-interface",
 ]
 

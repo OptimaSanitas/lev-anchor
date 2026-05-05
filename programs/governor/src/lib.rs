@@ -1,4 +1,4 @@
-//! 3/5 **upgrade** approvals + **execute_upgrade**; 3/5 (bits) to adjust **execute timelock** or **pause**; **5/5 + long timelock** for **irreversible** `close` (program) via CPI.
+//! 3/5 **upgrade** approvals + **execute_upgrade** / **execute_extend_program** (loader extend); 3/5 (bits) to adjust **execute timelock** or **pause**; **5/5 + long timelock** for **irreversible** `close` (program) via CPI.
 //!
 //! ## Time model
 //! - **Execute (upgrade) delay:** `timelock_duration` (seconds) is set with [`set_timelock`] while **≥3 approval bits** are set.
@@ -20,7 +20,15 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::bpf_loader_upgradeable;
 use anchor_lang::solana_program::program::invoke_signed;
 use anchor_lang::system_program;
-use solana_loader_v3_interface::instruction::{close_any, set_upgrade_authority};
+use bincode;
+use solana_loader_v3_interface::{
+    get_program_data_address,
+    instruction::{close_any, extend_program_checked, set_upgrade_authority, MINIMUM_EXTEND_PROGRAM_BYTES},
+    state::UpgradeableLoaderState,
+};
+
+/// Max program data size (cluster policy; standard 10 MiB). Used for extend “tail” rule (SIMD-0431).
+const MAX_PERMITTED_ACCOUNT_DATA: usize = 10 * 1024 * 1024;
 
 declare_id!("73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ");
 
@@ -44,6 +52,17 @@ fn is_upgrade_signer(k: &Pubkey) -> bool {
 fn require_upgrade_signer(k: &Pubkey) -> Result<()> {
     require!(is_upgrade_signer(k), ErrorCode::Unauthorized);
     Ok(())
+}
+
+/// Enforces `MINIMUM_EXTEND_PROGRAM_BYTES` when not in the "tail" of the 10 MiB cap (SIMD-0431).
+fn extend_size_ok(current_data_len: usize, additional: usize) -> bool {
+    let min = MINIMUM_EXTEND_PROGRAM_BYTES as usize;
+    if additional >= min {
+        return true;
+    }
+    let new_len = current_data_len.saturating_add(additional);
+    (MAX_PERMITTED_ACCOUNT_DATA as u64).saturating_sub(new_len as u64)
+        < (MINIMUM_EXTEND_PROGRAM_BYTES as u64)
 }
 
 #[error_code]
@@ -80,6 +99,24 @@ pub enum ErrorCode {
     MigrationTimelockNotPassed,
     #[msg("Migration timelock must be at least 7 days when non-zero")]
     MigrationMinTimelock,
+    #[msg("Extend additional_bytes must be > 0")]
+    ExtendZeroBytes,
+    #[msg("Cannot extend the governor program itself")]
+    CannotExtendGovernor,
+    #[msg("Target is not a Program loader state")]
+    ExtendNotProgram,
+    #[msg("ProgramData state invalid")]
+    ExtendNotProgramData,
+    #[msg("ProgramData upgrade authority must be the upgrade-gate PDA")]
+    ExtendAuthorityNotGate,
+    #[msg("ProgramData address does not match target program")]
+    ExtendProgramDataMismatch,
+    #[msg("Additional bytes below loader minimum unless near max account size")]
+    ExtendBelowMinimum,
+    #[msg("ProgramData modified this slot; retry next block")]
+    ExtendSameSlot,
+    #[msg("Failed to deserialize loader account")]
+    ExtendDeserialize,
 }
 
 #[program]
@@ -222,6 +259,126 @@ pub mod upgrade_governor {
         gate.approvals = 0;
         gate.queued_at = 0;
         msg!("Governor: upgrade executed");
+        Ok(())
+    }
+
+    /// Same policy as [`execute_upgrade`] (3/5, timelock, pause, signer ∈ `UPGRADE_SIGNERS`), but CPIs
+    /// loader **`ExtendProgramChecked`**: the **upgrade-gate PDA** must be the program’s upgrade authority.
+    pub fn execute_extend_program(
+        ctx: Context<ExecuteExtendProgram>,
+        _target_program: Pubkey,
+        additional_bytes: u32,
+    ) -> Result<()> {
+        let caller = ctx.accounts.authority.key();
+
+        require_keys_eq!(
+            ctx.accounts.target_program.key(),
+            _target_program,
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.upgrade_gate.approvals.count_ones() >= 3,
+            ErrorCode::Unauthorized
+        );
+        require!(!ctx.accounts.upgrade_gate.paused, ErrorCode::UpgradesPaused);
+
+        if ctx.accounts.upgrade_gate.timelock_duration > 0 {
+            let now = Clock::get()?.unix_timestamp;
+            require!(
+                now
+                    >= ctx.accounts.upgrade_gate.queued_at
+                        + ctx.accounts.upgrade_gate.timelock_duration,
+                ErrorCode::TimelockNotPassed
+            );
+        }
+
+        require!(is_upgrade_signer(&caller), ErrorCode::Unauthorized);
+        require!(_target_program != *ctx.program_id, ErrorCode::CannotExtendGovernor);
+        require!(additional_bytes > 0, ErrorCode::ExtendZeroBytes);
+
+        let expected_pd = get_program_data_address(&_target_program);
+        require_keys_eq!(
+            ctx.accounts.program_data.key(),
+            expected_pd,
+            ErrorCode::ExtendProgramDataMismatch
+        );
+
+        {
+            let d = ctx.accounts.target_program.try_borrow_data()?;
+            let p: UpgradeableLoaderState =
+                bincode::deserialize(&d).map_err(|_| ErrorCode::ExtendDeserialize)?;
+            let programdata_address = match p {
+                UpgradeableLoaderState::Program { programdata_address } => programdata_address,
+                _ => return err!(ErrorCode::ExtendNotProgram),
+            };
+            require_keys_eq!(
+                programdata_address,
+                ctx.accounts.program_data.key(),
+                ErrorCode::ExtendProgramDataMismatch
+            );
+        }
+
+        let (gate_key, gate_bump) = {
+            let g = &ctx.accounts.upgrade_gate;
+            (g.key(), g.bump)
+        };
+
+        {
+            let data = ctx.accounts.program_data.try_borrow_data()?;
+            let st: UpgradeableLoaderState =
+                bincode::deserialize(&data).map_err(|_| ErrorCode::ExtendDeserialize)?;
+            if let UpgradeableLoaderState::ProgramData {
+                slot,
+                upgrade_authority_address,
+            } = st
+            {
+                require!(
+                    upgrade_authority_address == Some(gate_key),
+                    ErrorCode::ExtendAuthorityNotGate
+                );
+                if slot == Clock::get()?.slot {
+                    return err!(ErrorCode::ExtendSameSlot);
+                }
+            } else {
+                return err!(ErrorCode::ExtendNotProgramData);
+            }
+        }
+
+        if !extend_size_ok(
+            ctx.accounts.program_data.to_account_info().data_len(),
+            additional_bytes as usize,
+        ) {
+            return err!(ErrorCode::ExtendBelowMinimum);
+        }
+
+        let program_key = *ctx.accounts.target_program.key;
+        let ix = extend_program_checked(&program_key, &gate_key, Some(&caller), additional_bytes);
+
+        let gate = &mut ctx.accounts.upgrade_gate;
+        let gate_info = gate.to_account_info();
+
+        invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.program_data.to_account_info(),
+                ctx.accounts.target_program.to_account_info(),
+                gate_info,
+                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+            ],
+            &[&[b"upgrade-gate", &[gate_bump]]],
+        )?;
+
+        emit!(ExtendProgramExecuted {
+            program: program_key,
+            additional_bytes,
+            authority: caller,
+            slot: Clock::get()?.slot,
+        });
+
+        gate.approvals = 0;
+        gate.queued_at = 0;
+        msg!("Governor: program extended");
         Ok(())
     }
 
@@ -495,6 +652,14 @@ pub struct UpgradeExecuted {
 }
 
 #[event]
+pub struct ExtendProgramExecuted {
+    pub program: Pubkey,
+    pub additional_bytes: u32,
+    pub authority: Pubkey,
+    pub slot: u64,
+}
+
+#[event]
 pub struct IrreversibleCloseQueued {
     pub at: i64,
     pub after_five_sec: i64,
@@ -600,6 +765,29 @@ pub struct ExecuteUpgrade<'info> {
     pub spill: UncheckedAccount<'info>,
     pub rent: Sysvar<'info, Rent>,
     pub clock: Sysvar<'info, Clock>,
+    /// CHECK: BPF upgradeable loader program id
+    #[account(address = bpf_loader_upgradeable::id())]
+    pub bpf_loader: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ExecuteExtendProgram<'info> {
+    #[account(mut, seeds = [b"upgrade-gate"], bump = upgrade_gate.bump)]
+    pub upgrade_gate: Account<'info, UpgradeGate>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    /// CHECK: Upgradeable program id (not ProgramData); must differ from this governor
+    #[account(mut)]
+    pub target_program: UncheckedAccount<'info>,
+    /// CHECK: ProgramData PDA for the target program
+    #[account(
+        mut,
+        seeds = [target_program.key().as_ref()],
+        bump,
+        seeds::program = bpf_loader_upgradeable::id()
+    )]
+    pub program_data: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
     /// CHECK: BPF upgradeable loader program id
     #[account(address = bpf_loader_upgradeable::id())]
     pub bpf_loader: UncheckedAccount<'info>,

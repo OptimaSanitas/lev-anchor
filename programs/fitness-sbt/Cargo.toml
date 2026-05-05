@@ -10,7 +10,8 @@ name = "sanitas_seeker"
 
 [dependencies]
 anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
-anchor-spl = "1.0.0"
+# default pulls `token_2022_extensions` (metadata/group/pod) — unused here; dropping saves BPF size.
+anchor-spl = { version = "1.0.0", default-features = false, features = ["associated_token", "mint", "token", "token_2022"] }
 
 [features]
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]

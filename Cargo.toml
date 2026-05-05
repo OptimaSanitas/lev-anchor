@@ -8,6 +8,9 @@ resolver = "2"
 overflow-checks = true
 lto = "fat"
 codegen-units = 1
+# Smaller BPF for the app program (governor keeps default release opts via package override below).
+[profile.release.package.sanitas_seeker]
+opt-level = "z"
 [profile.release.build-override]
 opt-level = 3
 incremental = false

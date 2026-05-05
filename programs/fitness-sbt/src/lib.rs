@@ -40,6 +40,19 @@ pub const BPS_DENOM: u16 = 10_000;
 
 pub const GENESIS_MINT: Pubkey = pubkey!("GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te");
 
+/// Max UTF-8 bytes stored in `DailyNews.data`. Matches the HTML admin flow: tiny inline JSON or `{"fetch":"https://…"}`; full issues live off-chain.
+pub const DAILY_NEWS_JSON_CAP: usize = 2_048;
+/// Governor upgrade-gate PDA currently controlling program upgrades on devnet/main flow.
+pub const GOVERNOR_GATE_AUTHORITY: Pubkey = pubkey!("AJ2gNkvsivS8rAjBfYNiBLk9KGnUmohNgZBLbmWaoJJf");
+/// Wallets allowed to submit news updates (same operator set as governor approvals).
+pub const NEWS_UPDATE_SIGNERS: [Pubkey; 5] = [
+    pubkey!("5fkgfLSGCxJTWcqQHfzigQUnxA1NAaCmmCjQbXmTvVzc"),
+    pubkey!("CwyNHESJ95mccZkGPEEApQdeB4XEV5mSL1SRkn6Ee8qG"),
+    pubkey!("8TeEjQkh2CQTbKo57r3n5GrYGYUzvrmbj1eRJgbjZsjp"),
+    pubkey!("BpDZ6jrcPYo1GoM4DWk857ys4R7MgyZb4FmHjkC9beuH"),
+    pubkey!("CQsV3Wj6pdcgEkk5hkS6bd31Q2xp9fCuAqvV9WoLjqAR"),
+];
+
 declare_id!("AwZRzJmcbRx3weqFXUi3MWhaEsS6a7GjvkCJH2DUTkhN");
 
 #[error_code]
@@ -48,7 +61,7 @@ pub enum ErrorCode {
     Unauthorized,
     #[msg("Rewards are currently disabled")]
     RewardsDisabled,
-    #[msg("News JSON too large for PDA (max 34k)")]
+    #[msg("News JSON too large for PDA (max 2 KiB — use Remote JSON URL in admin)")]
     NewsTooLarge,
     #[msg("Insufficient funds in reward pool")]
     InsufficientRewardPool,
@@ -122,6 +135,17 @@ fn verify_seeker_genesis_ownership(
     require!(user_genesis_ata.amount >= 1, ErrorCode::MissingGenesisNft);
     require_keys_eq!(user_genesis_ata.owner, user.key(), ErrorCode::Unauthorized);
     Ok(())
+}
+
+fn is_news_update_signer(k: &Pubkey) -> bool {
+    NEWS_UPDATE_SIGNERS.iter().any(|pk| pk == k)
+}
+
+fn news_signer_index(k: &Pubkey) -> Option<u8> {
+    NEWS_UPDATE_SIGNERS
+        .iter()
+        .position(|pk| pk == k)
+        .map(|i| i as u8)
 }
 
 #[program]
@@ -311,20 +335,80 @@ pub mod sanitas_seeker {
         Ok(())
     }
 
-    pub fn update_daily_news(ctx: Context<UpdateDailyNews>, news_json: String) -> Result<()> {
-        require!(news_json.len() <= 34_000, ErrorCode::NewsTooLarge);
+    pub fn propose_daily_news_update(
+        ctx: Context<ProposeDailyNewsUpdate>,
+        news_json: String,
+    ) -> Result<()> {
+        require!(
+            is_news_update_signer(&ctx.accounts.user.key()),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            news_json.len() <= DAILY_NEWS_JSON_CAP,
+            ErrorCode::NewsTooLarge
+        );
+        let signer_idx = news_signer_index(&ctx.accounts.user.key()).ok_or(error!(ErrorCode::Unauthorized))?;
+        let p = &mut ctx.accounts.news_proposal;
+        p.bump = ctx.bumps.news_proposal;
+        p.pending_data = news_json.into_bytes();
+        p.approvals = 1 << signer_idx;
+        p.queued_at = Clock::get()?.unix_timestamp;
+        p.proposer = ctx.accounts.user.key();
+        Ok(())
+    }
+
+    pub fn approve_daily_news_update(ctx: Context<ApproveDailyNewsUpdate>) -> Result<()> {
+        require!(
+            is_news_update_signer(&ctx.accounts.user.key()),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            !ctx.accounts.news_proposal.pending_data.is_empty(),
+            ErrorCode::Unauthorized
+        );
+        let signer_idx = news_signer_index(&ctx.accounts.user.key()).ok_or(error!(ErrorCode::Unauthorized))?;
+        let p = &mut ctx.accounts.news_proposal;
+        p.approvals |= 1 << signer_idx;
+        Ok(())
+    }
+
+    /// 3-of-5 controlled daily news update; applies the currently proposed payload.
+    pub fn update_daily_news(ctx: Context<UpdateDailyNews>) -> Result<()> {
+        require!(
+            is_news_update_signer(&ctx.accounts.user.key()),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.news_proposal.approvals.count_ones() >= 3,
+            ErrorCode::Unauthorized
+        );
+        require!(
+            !ctx.accounts.news_proposal.pending_data.is_empty(),
+            ErrorCode::Unauthorized
+        );
+
         let n = &mut ctx.accounts.daily_news;
-        n.data = news_json.into_bytes();
+        n.data = ctx.accounts.news_proposal.pending_data.clone();
         n.last_updated = Clock::get()?.unix_timestamp;
         n.bump = ctx.bumps.daily_news;
-        n.authority = ctx.accounts.user.key();
+        n.authority = GOVERNOR_GATE_AUTHORITY;
+
+        let p = &mut ctx.accounts.news_proposal;
+        p.pending_data.clear();
+        p.approvals = 0;
+        p.queued_at = 0;
+        p.proposer = Pubkey::default();
         Ok(())
     }
 
     pub fn reset_daily_news(ctx: Context<ResetDailyNews>) -> Result<()> {
+        require!(
+            is_news_update_signer(&ctx.accounts.user.key()),
+            ErrorCode::Unauthorized
+        );
         require_keys_eq!(
             ctx.accounts.daily_news.authority,
-            ctx.accounts.user.key(),
+            GOVERNOR_GATE_AUTHORITY,
             ErrorCode::Unauthorized
         );
         ctx.accounts.daily_news.data = vec![];
@@ -928,11 +1012,27 @@ pub struct LegendSupply {
     pub bump: u8,
 }
 
+/// `#[max_len]` fixes Anchor 1.x account exit sizing for `Vec<u8>`; without it, `update_daily_news`
+/// can hit Solana "Failed to reallocate account data" (per-ix realloc cap).
+/// Capacity is 2 KiB — enough for long `fetch` URLs; full thread arrays use HTTPS + `{"fetch":…}`.
 #[account]
+#[derive(InitSpace)]
 pub struct DailyNews {
     pub authority: Pubkey,
+    #[max_len(2_048)]
     pub data: Vec<u8>,
     pub last_updated: i64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct DailyNewsProposal {
+    pub proposer: Pubkey,
+    pub approvals: u8,
+    pub queued_at: i64,
+    #[max_len(2_048)]
+    pub pending_data: Vec<u8>,
     pub bump: u8,
 }
 
@@ -1321,15 +1421,39 @@ pub struct ClaimCalcSKR<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ProposeDailyNewsUpdate<'info> {
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + DailyNewsProposal::INIT_SPACE,
+        seeds = [b"daily-news-proposal-final"],
+        bump
+    )]
+    pub news_proposal: Account<'info, DailyNewsProposal>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ApproveDailyNewsUpdate<'info> {
+    #[account(mut, seeds = [b"daily-news-proposal-final"], bump = news_proposal.bump)]
+    pub news_proposal: Account<'info, DailyNewsProposal>,
+    pub user: Signer<'info>,
+}
+
+#[derive(Accounts)]
 pub struct UpdateDailyNews<'info> {
     #[account(
         init_if_needed,
         payer = user,
-        space = 8 + 32 + 4 + 34_000 + 8 + 1,
+        space = 8 + DailyNews::INIT_SPACE,
         seeds = [b"daily-news-seeker-final"],
         bump
     )]
     pub daily_news: Account<'info, DailyNews>,
+    #[account(mut, seeds = [b"daily-news-proposal-final"], bump = news_proposal.bump)]
+    pub news_proposal: Account<'info, DailyNewsProposal>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
