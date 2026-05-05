@@ -9,6 +9,10 @@
 //! - **“Cancel” queue:** not a named instruction. **[`set_timelock`]** or [`pause_upgrades`] clears `approvals` and `queued_at` (restarts).
 //! - **Irreversible close (5/5 + timelock):** separate PDA state ([`IrreversibleClose`]). `propose_close_program` → each signer
 //!   [`approve_irreversible`] bit → on 5/5, `irrev_queued_at` is set; **execute** after `irrev_timelock` (min 7d default).
+//! - **Migration (5/5 + timelock):** [`MigrationProposal`] PDA (`["migration"]`). Transfers **upgrade authority** of a target
+//!   program from the **upgrade-gate PDA** to a new pubkey via loader `SetAuthority` — e.g. hand off to a new governor,
+//!   temporary keypair for emergency redeploy, or `None`-equivalent is **not** supported here (use loader tooling if you
+//!   intend to finalize the program after migrating authority off the gate).
 
 #![allow(unexpected_cfgs)]
 
@@ -16,11 +20,11 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::bpf_loader_upgradeable;
 use anchor_lang::solana_program::program::invoke_signed;
 use anchor_lang::system_program;
-use solana_loader_v3_interface::instruction::close_any;
+use solana_loader_v3_interface::instruction::{close_any, set_upgrade_authority};
 
 declare_id!("73yx8W1HB7kooLXSgoqJtNoBNbRUKaotFNygd7b9dDRQ");
 
-/// Minimum delay after 5/5 is reached before `execute_close_program` (seconds). Product default: 7d.
+/// Minimum delay after 5/5 is reached before `execute_close_program` / `execute_migrate_authority` when timelock ≠ 0 (seconds). Product default: 7d.
 pub const MIN_IRREVERSIBLE_TIMELOCK_SEC: i64 = 7 * 24 * 60 * 60;
 
 /// Fixed at compile time. For **mainnet** with different approvers, deploy a build whose array matches your ops keys;
@@ -62,6 +66,20 @@ pub enum ErrorCode {
     IrevNotProposed,
     #[msg("Cannot close the governor program with this instruction")]
     CannotCloseGovernor,
+    #[msg("Cannot migrate upgrade authority for the governor program with this instruction")]
+    CannotMigrateGovernor,
+    #[msg("New upgrade authority must be non-default")]
+    MigrationInvalidNewAuthority,
+    #[msg("New upgrade authority cannot equal the upgrade-gate PDA (no-op)")]
+    MigrationNewIsGate,
+    #[msg("No migration proposal; call propose_migrate_authority first")]
+    MigrationNotProposed,
+    #[msg("Need 5/5 on migration approvals to execute")]
+    MigrationNeedFive,
+    #[msg("Migration timelock not passed")]
+    MigrationTimelockNotPassed,
+    #[msg("Migration timelock must be at least 7 days when non-zero")]
+    MigrationMinTimelock,
 }
 
 #[program]
@@ -337,6 +355,130 @@ pub mod upgrade_governor {
         msg!("Governor: program closed (irreversible path)");
         Ok(())
     }
+
+    // --- 5/5 + timelock: migrate upgrade authority (SetAuthority) off the gate PDA ---
+
+    /// Proposes transferring **upgrade authority** of `program_to_migrate` from the **upgrade-gate PDA** to
+    /// `new_upgrade_authority`. Requires **5/5** + optional post–5/5 delay (same min as close when non-zero).
+    pub fn propose_migrate_authority(
+        ctx: Context<ProposeMigrateAuthority>,
+        program_to_migrate: Pubkey,
+        new_upgrade_authority: Pubkey,
+        timelock_after_five: i64,
+    ) -> Result<()> {
+        require_upgrade_signer(&ctx.accounts.signer.key())?;
+        require!(
+            program_to_migrate != *ctx.program_id,
+            ErrorCode::CannotMigrateGovernor
+        );
+        require!(
+            new_upgrade_authority != Pubkey::default(),
+            ErrorCode::MigrationInvalidNewAuthority
+        );
+        let (gate_key, _gb) = Pubkey::find_program_address(&[b"upgrade-gate"], ctx.program_id);
+        require!(
+            new_upgrade_authority != gate_key,
+            ErrorCode::MigrationNewIsGate
+        );
+        if timelock_after_five != 0 && timelock_after_five < MIN_IRREVERSIBLE_TIMELOCK_SEC {
+            return err!(ErrorCode::MigrationMinTimelock);
+        }
+        let m = &mut ctx.accounts.migration;
+        m.bump = ctx.bumps.migration;
+        m.approvals = 0;
+        m.queued_at = 0;
+        m.timelock_after_five = timelock_after_five;
+        m.program_to_migrate = program_to_migrate;
+        m.new_upgrade_authority = new_upgrade_authority;
+        msg!("Governor: proposed migration; need 5/5 approvers then timelock");
+        Ok(())
+    }
+
+    /// Bit **separate** from `upgrade_gate` and [`IrreversibleClose`]. On 5/5, `queued_at` starts migration timelock.
+    pub fn approve_migrate_authority(ctx: Context<ApproveMigrateAuthority>, signer_index: u8) -> Result<()> {
+        require!(signer_index < 5, ErrorCode::Unauthorized);
+        require_keys_eq!(
+            ctx.accounts.signer.key(),
+            UPGRADE_SIGNERS[signer_index as usize],
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.migration.program_to_migrate != Pubkey::default(),
+            ErrorCode::MigrationNotProposed
+        );
+        let m = &mut ctx.accounts.migration;
+        m.approvals |= 1 << signer_index;
+        if m.approvals.count_ones() >= 5 && m.queued_at == 0 {
+            m.queued_at = Clock::get()?.unix_timestamp;
+            emit!(MigrationQueued {
+                at: m.queued_at,
+                after_five_sec: m.timelock_after_five,
+            });
+            msg!("Governor: 5/5 for migration — wait timelock then execute");
+        }
+        Ok(())
+    }
+
+    /// Gate PDA signs as **current** upgrade authority; one of five approvers pays and triggers after timelock.
+    pub fn execute_migrate_authority(ctx: Context<ExecuteMigrateAuthority>) -> Result<()> {
+        require_upgrade_signer(&ctx.accounts.authority.key())?;
+        let mig = &ctx.accounts.migration;
+        require!(
+            mig.program_to_migrate != Pubkey::default(),
+            ErrorCode::MigrationNotProposed
+        );
+        require!(
+            mig.approvals.count_ones() >= 5,
+            ErrorCode::MigrationNeedFive
+        );
+        if mig.timelock_after_five > 0 {
+            let now = Clock::get()?.unix_timestamp;
+            require!(
+                now >= mig.queued_at + mig.timelock_after_five,
+                ErrorCode::MigrationTimelockNotPassed
+            );
+        }
+
+        let program = ctx.accounts.program_to_migrate.key();
+        let program_data = ctx.accounts.program_data.key();
+        require_keys_eq!(program, mig.program_to_migrate, ErrorCode::Unauthorized);
+        let new_auth = ctx.accounts.new_upgrade_authority.key();
+        require_keys_eq!(new_auth, mig.new_upgrade_authority, ErrorCode::Unauthorized);
+
+        let (pd_expected, _) =
+            Pubkey::find_program_address(&[program.as_ref()], &bpf_loader_upgradeable::id());
+        require_keys_eq!(program_data, pd_expected, ErrorCode::Unauthorized);
+        require!(program != *ctx.program_id, ErrorCode::CannotMigrateGovernor);
+
+        let gate_key = ctx.accounts.upgrade_gate.key();
+        let gate_bump = ctx.accounts.upgrade_gate.bump;
+        let gate_info = ctx.accounts.upgrade_gate.to_account_info();
+
+        let ix = set_upgrade_authority(&program, &gate_key, Some(&new_auth));
+
+        invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.program_data.to_account_info(),
+                gate_info,
+                ctx.accounts.new_upgrade_authority.to_account_info(),
+            ],
+            &[&[b"upgrade-gate", &[gate_bump]]],
+        )?;
+
+        let m = &mut ctx.accounts.migration;
+        m.approvals = 0;
+        m.queued_at = 0;
+        m.program_to_migrate = Pubkey::default();
+        m.new_upgrade_authority = Pubkey::default();
+        m.timelock_after_five = 0;
+        emit!(MigrationExecuted {
+            program,
+            new_authority: new_auth,
+        });
+        msg!("Governor: upgrade authority migrated off gate PDA");
+        Ok(())
+    }
 }
 
 #[event]
@@ -356,6 +498,18 @@ pub struct UpgradeExecuted {
 pub struct IrreversibleCloseQueued {
     pub at: i64,
     pub after_five_sec: i64,
+}
+
+#[event]
+pub struct MigrationQueued {
+    pub at: i64,
+    pub after_five_sec: i64,
+}
+
+#[event]
+pub struct MigrationExecuted {
+    pub program: Pubkey,
+    pub new_authority: Pubkey,
 }
 
 #[account]
@@ -379,6 +533,17 @@ pub struct IrreversibleClose {
     pub timelock_after_five: i64,
     pub program_to_close: Pubkey,
     pub close_rent_recipient: Pubkey,
+}
+
+/// Single pending 5/5 + timelock to move **upgrade authority** from the gate PDA to `new_upgrade_authority`.
+#[account]
+pub struct MigrationProposal {
+    pub bump: u8,
+    pub approvals: u8,
+    pub queued_at: i64,
+    pub timelock_after_five: i64,
+    pub program_to_migrate: Pubkey,
+    pub new_upgrade_authority: Pubkey,
 }
 
 #[derive(Accounts)]
@@ -500,4 +665,48 @@ pub struct ExecuteCloseProgram<'info> {
     /// CHECK: required in tx for upgradeable program close CPI
     #[account(address = bpf_loader_upgradeable::id())]
     pub bpf_loader: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ProposeMigrateAuthority<'info> {
+    #[account(
+        init_if_needed,
+        payer = signer,
+        space = 8 + 1 + 1 + 8 + 8 + 32 + 32,
+        seeds = [b"migration"],
+        bump
+    )]
+    pub migration: Account<'info, MigrationProposal>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ApproveMigrateAuthority<'info> {
+    #[account(mut, seeds = [b"migration"], bump = migration.bump)]
+    pub migration: Account<'info, MigrationProposal>,
+    pub signer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ExecuteMigrateAuthority<'info> {
+    #[account(seeds = [b"upgrade-gate"], bump = upgrade_gate.bump)]
+    pub upgrade_gate: Account<'info, UpgradeGate>,
+    /// CHECK: upgradeable program whose authority moves off the gate
+    #[account(owner = bpf_loader_upgradeable::id())]
+    pub program_to_migrate: UncheckedAccount<'info>,
+    /// CHECK: ProgramData PDA for `program_to_migrate`; validated against proposal + loader seeds before CPI.
+    #[account(
+        mut,
+        seeds = [program_to_migrate.key().as_ref()],
+        bump,
+        seeds::program = bpf_loader_upgradeable::id()
+    )]
+    pub program_data: UncheckedAccount<'info>,
+    /// CHECK: pubkey recorded as new upgrade authority; matches migration proposal; loader does not require it to sign (unchecked SetAuthority).
+    pub new_upgrade_authority: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"migration"], bump = migration.bump)]
+    pub migration: Account<'info, MigrationProposal>,
+    pub authority: Signer<'info>,
 }
